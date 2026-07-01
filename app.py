@@ -125,28 +125,54 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                 "Dias Restantes": dias_restantes, "Status": status
             })
             
-        df_alertas_final = pd.DataFrame(linhas_alertas)
+        df_base_alertas = pd.DataFrame(linhas_alertas)
         
-        # Botão de Disparo de E-mails
+        # 🔍 Seção de Filtros (Adicionados de volta no topo)
+        st.markdown("### 🔍 Filtros de Monitoramento")
+        c1, c2 = st.columns(2)
+        with c1:
+            filtro_status = st.multiselect("Filtrar por Status:", ["🔴 VENCIDO", "🟡 CRÍTICO (Até 15 dias)", "🟢 Regular"], default=["🔴 VENCIDO", "🟡 CRÍTICO (Até 15 dias)"])
+        with c2:
+            lista_deptos = sorted(list(df_base_alertas['Departamento'].unique())) if not df_base_alertas.empty else []
+            filtro_depto = st.multiselect("Filtrar por Departamento:", lista_deptos)
+            
+        # Aplica os filtros na base de dados
+        df_alertas_final = df_base_alertas.copy()
+        if filtro_status:
+            df_alertas_final = df_alertas_final[df_alertas_final['Status'].isin(filtro_status)]
+        if filtro_depto:
+            df_alertas_final = df_alertas_final[df_alertas_final['Departamento'].isin(filtro_depto)]
+            
+        # Ordena pelos prazos mais urgentes
+        df_alertas_final = df_alertas_final.sort_values(by="Dias Restantes")
+        
+        # Apresenta os indicadores rápidos baseados no que está filtrado na tela
+        vencidos_qtd = len(df_alertas_final[df_alertas_final['Status'] == "🔴 VENCIDO"])
+        criticos_qtd = len(df_alertas_final[df_alertas_final['Status'] == "🟡 CRÍTICO (Até 15 dias)"])
+        
+        col_card1, col_card2 = st.columns(2)
+        col_card1.metric(label="🚨 Funcionários com EPI Vencido (Filtrado)", value=vencidos_qtd, delta=f"{vencidos_qtd} urgentes", delta_color="inverse")
+        col_card2.metric(label="⚠️ EPIs Próximos do Vencimento (Filtrado)", value=criticos_qtd, delta=f"{criticos_qtd} atenção")
+
+        st.markdown("---")
         st.markdown("### ✉️ Central de Notificações Automatizadas")
-        if st.button("✉️ DISPARAR ALERTAS PARA GESTORES", type="secondary"):
+        
+        if st.button("✉️ DISPARAR ALERTAS PARA GESTORES DOS DEPTOS FILTRADOS", type="secondary"):
             df_pendentes = df_alertas_final[df_alertas_final['Status'].isin(["🔴 VENCIDO", "🟡 CRÍTICO (Até 15 dias)"])]
             
             if df_pendentes.empty:
-                st.success("🎉 Excelente! Nenhum EPI vencido ou crítico para notificar no momento.")
+                st.success("🎉 Excelente! Nenhum EPI vencido ou crítico para notificar baseado nos filtros atuais.")
             elif df_gestores.empty:
                 st.error("❌ Não foi possível carregar a aba tb_gestores para mapear os e-mails.")
             else:
                 sucesso_geral = True
-                # Agrupa as pendências por departamento para enviar um único e-mail consolidado por gestor
                 for depto_grupo, dados_grupo in df_pendentes.groupby("Departamento"):
                     gestor_row = df_gestores[df_gestores.iloc[:, 0].astype(str).str.strip().str.upper() == str(depto_grupo).strip().upper()]
                     
                     if not gestor_row.empty:
-                        email_gestor = gestor_row.iloc[0, 2] # Assume que coluna C é o e-mail
-                        nome_gestor = gestor_row.iloc[0, 1]  # Coluna B é o nome do gestor
+                        email_gestor = gestor_row.iloc[0, 2]
+                        nome_gestor = gestor_row.iloc[0, 1]
                         
-                        # Monta o corpo do e-mail em HTML super elegante
                         msg = MIMEMultipart()
                         msg['From'] = EMAIL_REMETENTE
                         msg['To'] = email_gestor
@@ -173,7 +199,6 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                         """
                         msg.attach(MIMEText(corpo_html, 'html'))
                         
-                        # Conexão SMTP e envio de fato
                         try:
                             server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
                             server.starttls()
@@ -186,16 +211,14 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                             st.write(f"❌ Falha técnica ao enviar e-mail para o depto {depto_grupo}. (Verifique as credenciais SMTP no código).")
                 
                 if sucesso_geral:
-                    st.success("🎯 Todos os e-mails de alerta aplicáveis foram processados!")
+                    st.success("🎯 Todos os e-mails aplicáveis foram processados com base nos filtros!")
         
         st.markdown("---")
-        st.markdown("### 🔍 Filtros de Monitoramento")
-        filtro_status = st.multiselect("Filtrar por Status:", ["🔴 VENCIDO", "🟡 CRÍTICO (Até 15 dias)", "🟢 Regular"], default=["🔴 VENCIDO", "🟡 CRÍTICO (Até 15 dias)"])
-        
+        st.markdown("### 📋 Listagem Consolidada de Prazos")
         if not df_alertas_final.empty:
-            if filtro_status:
-                df_alertas_final = df_alertas_final[df_alertas_final['Status'].isin(filtro_status)]
-            st.dataframe(df_alertas_final.sort_values(by="Dias Restantes"), use_container_width=True, hide_index=True)
+            st.dataframe(df_alertas_final, use_container_width=True, hide_index=True)
+        else:
+            st.success("🎉 Nenhum registro encontrado para a combinação de filtros selecionada!")
 
 elif menu == "Visualizar Tabelas Reais":
     st.header("📊 Dados Atuais do Google Sheets")
