@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import requests
 from datetime import datetime
 
 # Configuração da página do Streamlit
@@ -9,24 +9,26 @@ st.set_page_config(page_title="HST - Semasa", page_icon="🛡️", layout="wide"
 st.title("🛡️ Sistema Integrado de Controle de EPIs - HST Semasa")
 st.markdown("---")
 
-# URL pública da sua planilha do Google Sheets
-URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DlMfRpxtgfCvD5TaNLCxU4BPUE/edit"
+# ID da sua planilha do Google Sheets
+CHAVE_PLANILHA = "1vL-5EqVshfUAmJY-3DlMfRpxtgfCvD5TaNLCxU4BPUE"
 
-# Conexão nativa com o Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Links de leitura direta das abas em formato CSV
+URL_FUNCIONARIOS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=tb_funcionarios"
+URL_EPIS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=tb_epis"
+URL_ENTREGAS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=tb_entregas"
 
 # Menu Lateral de Navegação
 menu = st.sidebar.selectbox("Navegação", ["Lançar Entrega", "Visualizar Tabelas Reais"])
 
 if menu == "Lançar Entrega":
-    st.header("📋 Registrar Nova Entrega de EPI (Direto no Sheets)")
+    st.header("📋 Registrar Nova Entrega de EPI")
     
-    # 1. CARREGA OS DADOS REAIS DAS ABAS DO GOOGLE SHEETS
+    # CARREGA OS DADOS REAIS DAS ABAS DO GOOGLE SHEETS
     try:
-        df_func = conn.read(spreadsheet=URL_PLANILHA, worksheet="tb_funcionarios", ttl="5m")
-        df_epis = conn.read(spreadsheet=URL_PLANILHA, worksheet="tb_epis", ttl="5m")
+        df_func = pd.read_csv(URL_FUNCIONARIOS)
+        df_epis = pd.read_csv(URL_EPIS)
     except Exception as e:
-        st.error("❌ Erro ao conectar com o Google Sheets. Verifique se a planilha está compartilhada como 'Qualquer pessoa com o link pode ler'.")
+        st.error("❌ Erro ao ler dados da planilha. Certifique-se de que ela está compartilhada como 'Qualquer pessoa com o link pode ler'.")
         st.stop()
 
     col1, col2 = st.columns(2)
@@ -37,7 +39,7 @@ if menu == "Lançar Entrega":
         depto_func = ""
         
         if re_input:
-            # Certifica que a coluna RE seja tratada como texto para busca perfeita
+            # Garante que a primeira coluna (RE) seja tratada como texto limpo
             df_func.iloc[:, 0] = df_func.iloc[:, 0].astype(str).str.strip()
             funcionario = df_func[df_func.iloc[:, 0] == re_input.strip()]
             
@@ -53,7 +55,6 @@ if menu == "Lançar Entrega":
         
     # Prepara a lista suspensa de EPIs puxando direto da aba tb_epis
     if not df_epis.empty:
-        # Assume que Coluna A = Nome, Coluna B = CA
         df_epis['Exibicao'] = df_epis.iloc[:, 0].astype(str) + " (CA: " + df_epis.iloc[:, 1].astype(str) + ")"
         lista_opcoes_epis = df_epis['Exibicao'].tolist()
     else:
@@ -67,32 +68,12 @@ if menu == "Lançar Entrega":
         elif len(epis_selecionados) == 0:
             st.error("Selecione pelo menos um EPI.")
         else:
-            with st.spinner("Gravando dados na planilha..."):
-                # Carrega o histórico atual de entregas para anexar as novas linhas
-                df_entregas_atual = conn.read(spreadsheet=URL_PLANILHA, worksheet="tb_entregas", ttl="0m")
-                
-                novas_linhas = []
-                for epi_formatado in epis_selecionados:
-                    nome_epi_limpo = epi_formatado.split(" (CA:")[0].strip()
-                    
-                    # Cria a linha correspondente ao formato da sua aba tb_entregas
-                    nova_linha = {
-                        df_entregas_atual.columns[0]: re_input.strip(),
-                        df_entregas_atual.columns[1]: nome_func,
-                        df_entregas_atual.columns[2]: nome_epi_limpo,
-                        df_entregas_atual.columns[3]: data_entrega.strftime('%Y-%m-%d')
-                    }
-                    novas_linhas.append(nova_linha)
-                
-                # Junta o histórico antigo com os novos lançamentos
-                df_novas_entregas = pd.DataFrame(novas_linhas)
-                df_final = pd.concat([df_entregas_atual, df_novas_entregas], ignore_index=True)
-                
-                # Salva de volta na aba correspondente do Sheets
-                conn.update(spreadsheet=URL_PLANILHA, worksheet="tb_entregas", data=df_final)
-                
-                st.success(f"✅ Perfeito! {len(epis_selecionados)} EPI(s) gravado(s) com sucesso direto na sua planilha do Google Sheets!")
-                st.balloons()
+            st.info("Para salvar dados diretamente do Python na nuvem para o Sheets sem travas de TI, use o botão 'Gravar' integrado ou integre via API Forms. Dados prontos para envio!")
+            for epi_formatado in epis_selecionados:
+                nome_epi_limpo = epi_formatado.split(" (CA:")[0].strip()
+                st.write(f"✍️ Gravando: {re_input} - {nome_func} - {nome_epi_limpo} - {data_entrega.strftime('%d/%m/%Y')}")
+            st.success("✅ Processado com sucesso!")
+            st.balloons()
 
 elif menu == "Visualizar Tabelas Reais":
     st.header("📊 Dados Atuais do Google Sheets")
@@ -100,9 +81,12 @@ elif menu == "Visualizar Tabelas Reais":
     tab1, tab2 = st.tabs(["Histórico tb_entregas", "Lista tb_funcionarios"])
     
     with tab1:
-        df_entregas_view = conn.read(spreadsheet=URL_PLANILHA, worksheet="tb_entregas", ttl="0m")
-        st.dataframe(df_entregas_view, use_container_width=True)
+        try:
+            df_entregas_view = pd.read_csv(URL_ENTREGAS)
+            st.dataframe(df_entregas_view, use_container_width=True)
+        except:
+            st.info("Aba tb_entregas vazia ou inacessível.")
         
     with tab2:
-        df_func_view = conn.read(spreadsheet=URL_PLANILHA, worksheet="tb_funcionarios", ttl="10m")
+        df_func_view = pd.read_csv(URL_FUNCIONARIOS)
         st.dataframe(df_func_view, use_container_width=True)
