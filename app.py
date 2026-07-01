@@ -77,15 +77,15 @@ if menu == "Lançar Entrega":
                 for epi_formatado in epis_selecionados:
                     nome_epi_limpo = epi_formatado.split(" (CA:")[0].strip()
                     
-                    # Monta o dicionário com as IDs exatas do seu formulário
+                    # Dicionário atualizado com as chaves corretas extraídas do código-fonte
                     dados_formulario = {
-                        "entry.685934520": re_input,
-                        "entry.88879612": nome_func,
-                        "entry.1481519098": nome_epi_limpo,
-                        "entry.444747065": data_entrega.strftime('%Y-%m-%d')
+                        "entry.2087142219": re_input,
+                        "entry.1719783905": nome_func,
+                        "entry.791852446": nome_epi_limpo,
+                        "entry.1336399804": data_entrega.strftime('%Y-%m-%d')
                     }
                     
-                    # Faz o disparo invisível via POST HTTP para a nuvem do Google
+                    # Faz o disparo via POST HTTP para a nuvem do Google
                     resposta = requests.post(URL_FORM_POST, data=dados_formulario)
                     if resposta.status_code != 200:
                         sucesso_envio = False
@@ -94,7 +94,7 @@ if menu == "Lançar Entrega":
                 st.success(f"✅ Perfeito! {len(epis_selecionados)} EPI(s) gravado(s) com sucesso direto na sua planilha!")
                 st.balloons()
             else:
-                st.error("⚠️ Ocorreu um problema ao enviar alguns itens. Verifique a conexão com a internet.")
+                st.error("⚠️ Ocorreu um problema ao enviar alguns itens. Verifique as configurações de acesso do formulário.")
 
 elif menu == "Visualizar Tabelas Reais":
     st.header("📊 Dados Atuais do Google Sheets")
