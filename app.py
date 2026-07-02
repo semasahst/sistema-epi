@@ -13,12 +13,14 @@ st.title("🛡️ Sistema Integrado de Controle de EPIs - HST Semasa")
 st.markdown("---")
 
 # ==============================================================================
-# CONFIGURAÇÕES DE E-MAIL (SMTP) - Ajuste com os dados fornecidos pela TI
+# CONFIGURAÇÕES DE E-MAIL (GMAIL COMUM)
 # ==============================================================================
-SMTP_SERVER = "smtp.office365.com"  # Ex: smtp.gmail.com ou o servidor interno do Semasa
-SMTP_PORT = 587
-EMAIL_REMETENTE = "seu-email@semasa.sp.gov.br" # E-mail que vai disparar os alertas
-EMAIL_SENHA = "sua-senha-aqui"                 # Senha ou Token de aplicativo do e-mail
+SMTP_SERVER = "smtp.gmail.com"  
+SMTP_PORT = 587                 
+
+# ⚠️ COLOQUE SEU GMAIL E SUA SENHA DE APP DE 16 LETRAS AQUI:
+EMAIL_REMETENTE = "seu_email_aqui@gmail.com" 
+EMAIL_SENHA = "abcd efgh ijkl mnop"  
 
 # ID da sua planilha do Google Sheets para LEITURA
 CHAVE_PLANILHA = "1vL-5EqVshfUAmJY-3DlMfRpxtgfCvD5TaNLCxU4BPUE"
@@ -62,6 +64,9 @@ if menu == "Lançar Entrega":
         
     epis_selecionados = st.multiselect("Selecione um ou mais EPIs entregues:", lista_opcoes_epis)
     
+    # Campo de Quantidade na Interface
+    qtd_entrega = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
+    
     if st.button("🚀 GRAVAR ENTREGA NO GOOGLE SHEETS", type="primary"):
         if not re_input or not nome_func:
             st.error("Insira um RE válido.")
@@ -71,14 +76,16 @@ if menu == "Lançar Entrega":
             sucesso_envio = True
             with st.spinner("Gravando..."):
                 for epi_formatado in epis_selecionados:
+                    # ✅ Vinculado com o ID real mapeado pelo console
                     dados_formulario = {
                         "entry.2087142219": re_input,
                         "entry.1719783905": nome_func,
                         "entry.791852446": epi_formatado.split(" (CA:")[0].strip(),
-                        "entry.1336399804": data_entrega.strftime('%Y-%m-%d')
+                        "entry.1336399804": data_entrega.strftime('%Y-%m-%d'),
+                        "entry.342195985": str(qtd_entrega) 
                     }
                     requests.post(URL_FORM_POST, data=dados_formulario)
-            st.success("✅ Gravado com sucesso!")
+            st.success(f"✅ {len(epis_selecionados)} EPI(s) gravado(s) com quantidade {qtd_entrega}!")
             st.balloons()
 
 elif menu == "⚠️ EPIs Vencidos/A Vencer":
@@ -94,7 +101,13 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
     if df_historico.empty:
         st.info("ℹ️ Nenhuma entrega registrada.")
     else:
-        df_historico.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega']
+        colunas_disponiveis = list(df_historico.columns)
+        if len(colunas_disponiveis) >= 5:
+            if 'Carimbo' in colunas_disponiveis[0] or 'Timestamp' in colunas_disponiveis[0]:
+                df_historico.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas_disponiveis[6:]
+            else:
+                df_historico.columns = ['RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas_disponiveis[5:]
+            
         df_historico['Data_Entrega'] = pd.to_datetime(df_historico['Data_Entrega'], errors='coerce')
         df_historico = df_historico.dropna(subset=['Data_Entrega'])
         df_ultimas_entregas = df_historico.sort_values('Data_Entrega').groupby(['RE', 'EPI']).last().reset_index()
@@ -117,17 +130,18 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             if not df_func.empty:
                 f_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(row['RE']).strip()]
                 if not f_match.empty: depto = f_match.iloc[0, 2]
+                
+            qtd_salva = row['Quantidade'] if 'Quantidade' in row and pd.notnull(row['Quantidade']) else "1"
             
             linhas_alertas.append({
                 "RE": row['RE'], "Funcionário": row['Funcionário'], "Departamento": depto,
-                "EPI": nome_epi, "CA": dicionario_ca.get(nome_epi, "N/A"),
+                "EPI": nome_epi, "CA": dicionario_ca.get(nome_epi, "N/A"), "Qtd": qtd_salva,
                 "Data Entrega": dt_entrega.strftime('%d/%m/%Y'), "Data Vencimento": dt_vencimento.strftime('%d/%m/%Y'),
                 "Dias Restantes": dias_restantes, "Status": status
             })
             
         df_base_alertas = pd.DataFrame(linhas_alertas)
         
-        # 🔍 Seção de Filtros (Adicionados de volta no topo)
         st.markdown("### 🔍 Filtros de Monitoramento")
         c1, c2 = st.columns(2)
         with c1:
@@ -136,17 +150,14 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             lista_deptos = sorted(list(df_base_alertas['Departamento'].unique())) if not df_base_alertas.empty else []
             filtro_depto = st.multiselect("Filtrar por Departamento:", lista_deptos)
             
-        # Aplica os filtros na base de dados
         df_alertas_final = df_base_alertas.copy()
         if filtro_status:
             df_alertas_final = df_alertas_final[df_alertas_final['Status'].isin(filtro_status)]
         if filtro_depto:
             df_alertas_final = df_alertas_final[df_alertas_final['Departamento'].isin(filtro_depto)]
             
-        # Ordena pelos prazos mais urgentes
         df_alertas_final = df_alertas_final.sort_values(by="Dias Restantes")
         
-        # Apresenta os indicadores rápidos baseados no que está filtrado na tela
         vencidos_qtd = len(df_alertas_final[df_alertas_final['Status'] == "🔴 VENCIDO"])
         criticos_qtd = len(df_alertas_final[df_alertas_final['Status'] == "🟡 CRÍTICO (Até 15 dias)"])
         
@@ -160,65 +171,67 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
         if st.button("✉️ DISPARAR ALERTAS PARA GESTORES DOS DEPTOS FILTRADOS", type="secondary"):
             df_pendentes = df_alertas_final[df_alertas_final['Status'].isin(["🔴 VENCIDO", "🟡 CRÍTICO (Até 15 dias)"])]
             
-            if df_pendentes.empty:
+            if EMAIL_REMETENTE == "seu_email_aqui@gmail.com":
+                st.error("❌ Configure as credenciais de e-mail do Gmail nas linhas 23 e 24 do código.")
+            elif df_pendentes.empty:
                 st.success("🎉 Excelente! Nenhum EPI vencido ou crítico para notificar baseado nos filtros atuais.")
             elif df_gestores.empty:
-                st.error("❌ Não foi possível carregar a aba tb_gestores para mapear os e-mails.")
+                st.error("❌ Não foi possível carregar a aba tb_gestores.")
             else:
                 sucesso_geral = True
-                for depto_grupo, dados_grupo in df_pendentes.groupby("Departamento"):
-                    gestor_row = df_gestores[df_gestores.iloc[:, 0].astype(str).str.strip().str.upper() == str(depto_grupo).strip().upper()]
+                with st.spinner("Enviando e-mails..."):
+                    for depto_grupo, dados_grupo in df_pendentes.groupby("Departamento"):
+                        gestor_row = df_gestores[df_gestores.iloc[:, 0].astype(str).str.strip().str.upper() == str(depto_grupo).strip().upper()]
+                        
+                        if not gestor_row.empty:
+                            email_gestor = gestor_row.iloc[0, 2]
+                            nome_gestor = gestor_row.iloc[0, 1]
+                            
+                            msg = MIMEMultipart()
+                            msg['From'] = EMAIL_REMETENTE
+                            msg['To'] = email_gestor
+                            msg['Subject'] = f"🚨 [HST Semasa] Alerta de EPIs Vencidos - Depto: {depto_grupo}"
+                            
+                            html_tabela = ""
+                            for _, r in dados_grupo.iterrows():
+                                cor_status = "#ffcccc" if r['Status'] == "🔴 VENCIDO" else "#fff2cc"
+                                html_tabela += f"<tr style='background-color: {cor_status};'><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td>{r['Qtd']}</td><td>{r['Data Vencimento']}</td><td>{r['Dias Restantes']} dias</td></tr>"
+                            
+                            corpo_html = f"""
+                            <html>
+                            <body>
+                                <h2>Olá, {nome_gestor}!</h2>
+                                <p>Este é um alerta automático do <b>Sistema HST Semasa</b>. Os colaboradores abaixo possuem pendências de EPI no departamento <b>{depto_grupo}</b>:</p>
+                                <table border='1' cellpadding='5' style='border-collapse: collapse;'>
+                                    <tr style='background-color: #f2f2f2;'><th>RE</th><th>Funcionário</th><th>EPI</th><th>Qtd Retirada</th><th>Vencimento</th><th>Prazo</th></tr>
+                                    {html_tabela}
+                                </table>
+                                <hr><small>E-mail gerado automaticamente pelo Sistema Integrado de EPIs - Semasa.</small>
+                            </body>
+                            </html>
+                            """
+                            msg.attach(MIMEText(corpo_html, 'html'))
+                            
+                            try:
+                                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                                server.starttls()
+                                server.login(EMAIL_REMETENTE, EMAIL_SENHA)
+                                server.sendmail(EMAIL_REMETENTE, email_gestor, msg.as_string())
+                                server.quit()
+                                st.write(f"📧 E-mail enviado para o Gestor {nome_gestor} ({depto_grupo})!")
+                            except Exception as ex:
+                                sucesso_geral = False
+                                st.write(f"❌ Falha para o depto {depto_grupo}: {ex}")
                     
-                    if not gestor_row.empty:
-                        email_gestor = gestor_row.iloc[0, 2]
-                        nome_gestor = gestor_row.iloc[0, 1]
-                        
-                        msg = MIMEMultipart()
-                        msg['From'] = EMAIL_REMETENTE
-                        msg['To'] = email_gestor
-                        msg['Subject'] = f"🚨 [HST Semasa] Alerta de EPIs Vencidos - Depto: {depto_grupo}"
-                        
-                        html_tabela = ""
-                        for _, r in dados_grupo.iterrows():
-                            cor_status = "#ffcccc" if r['Status'] == "🔴 VENCIDO" else "#fff2cc"
-                            html_tabela += f"<tr style='background-color: {cor_status};'><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td>{r['Data Vencimento']}</td><td>{r['Dias Restantes']} dias</td></tr>"
-                        
-                        corpo_html = f"""
-                        <html>
-                        <body>
-                            <h2>Olá, {nome_gestor}!</h2>
-                            <p>Este é um alerta automático do <b>Sistema HST Semasa</b>. Os colaboradores abaixo, sob sua gestão no departamento <b>{depto_grupo}</b>, estão trabalhando com EPIs vencidos ou próximos do vencimento:</p>
-                            <table border='1' cellpadding='5' style='border-collapse: collapse;'>
-                                <tr style='background-color: #f2f2f2;'><th>RE</th><th>Funcionário</th><th>EPI</th><th>Vencimento</th><th>Prazo</th></tr>
-                                {html_tabela}
-                            </table>
-                            <p><br>Por favor, solicite a regularização e a retirada dos novos equipamentos junto ao setor de Segurança do Trabalho o quanto antes.</p>
-                            <hr><small>E-mail gerado automaticamente pelo Sistema Integrado de EPIs - Semasa.</small>
-                        </body>
-                        </html>
-                        """
-                        msg.attach(MIMEText(corpo_html, 'html'))
-                        
-                        try:
-                            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                            server.starttls()
-                            server.login(EMAIL_REMETENTE, EMAIL_SENHA)
-                            server.sendmail(EMAIL_REMETENTE, email_gestor, msg.as_string())
-                            server.quit()
-                            st.write(f"📧 E-mail de resumo enviado com sucesso para o Gestor {nome_gestor} ({depto_grupo})!")
-                        except Exception as ex:
-                            sucesso_geral = False
-                            st.write(f"❌ Falha técnica ao enviar e-mail para o depto {depto_grupo}. (Verifique as credenciais SMTP no código).")
-                
                 if sucesso_geral:
-                    st.success("🎯 Todos os e-mails aplicáveis foram processados com base nos filtros!")
-        
+                    st.success("🎯 Todos os e-mails aplicáveis foram processados!")
+
         st.markdown("---")
         st.markdown("### 📋 Listagem Consolidada de Prazos")
         if not df_alertas_final.empty:
             st.dataframe(df_alertas_final, use_container_width=True, hide_index=True)
         else:
-            st.success("🎉 Nenhum registro encontrado para a combinação de filtros selecionada!")
+            st.success("🎉 Nenhum registro encontrado!")
 
 elif menu == "Visualizar Tabelas Reais":
     st.header("📊 Dados Atuais do Google Sheets")
