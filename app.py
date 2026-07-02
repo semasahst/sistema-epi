@@ -5,6 +5,13 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta
+import io
+
+# Importações do ReportLab para gerar o PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="HST - Semasa", page_icon="🛡️", layout="wide")
@@ -18,9 +25,8 @@ st.markdown("---")
 SMTP_SERVER = "smtp.gmail.com"  
 SMTP_PORT = 587                 
 
-# ⚠️ COLOQUE SEU GMAIL E SUA SENHA DE APP DE 16 LETRAS AQUI:
-EMAIL_REMETENTE = "semasa.hst@gmail.com" 
-EMAIL_SENHA = "hst.semasa"  
+EMAIL_REMETENTE = "seu_email_aqui@gmail.com" 
+EMAIL_SENHA = "abcd efgh ijkl mnop"  
 
 # ID da sua planilha do Google Sheets para LEITURA
 CHAVE_PLANILHA = "1vL-5EqVshfUAmJY-3DlMfRpxtgfCvD5TaNLCxU4BPUE"
@@ -31,8 +37,8 @@ URL_EPIS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx
 URL_RESPOSTAS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=Respostas%20ao%20formul%C3%A1rio%201"
 URL_GESTORES = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=tb_gestores"
 
-# Menu Lateral
-menu = st.sidebar.selectbox("Navegação", ["Lançar Entrega", "⚠️ EPIs Vencidos/A Vencer", "Visualizar Tabelas Reais"])
+# Menu Lateral com a nova opção de Ficha inclusa
+menu = st.sidebar.selectbox("Navegação", ["Lançar Entrega", "⚠️ EPIs Vencidos/A Vencer", "📄 Gerar Ficha de EPI", "Visualizar Tabelas Reais"])
 
 try:
     df_func = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
@@ -63,8 +69,6 @@ if menu == "Lançar Entrega":
         lista_opcoes_epis = df_epis['Exibicao'].tolist()
         
     epis_selecionados = st.multiselect("Selecione um ou mais EPIs entregues:", lista_opcoes_epis)
-    
-    # Campo de Quantidade na Interface
     qtd_entrega = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
     
     if st.button("🚀 GRAVAR ENTREGA NO GOOGLE SHEETS", type="primary"):
@@ -73,10 +77,8 @@ if menu == "Lançar Entrega":
         elif len(epis_selecionados) == 0:
             st.error("Selecione um EPI.")
         else:
-            sucesso_envio = True
             with st.spinner("Gravando..."):
                 for epi_formatado in epis_selecionados:
-                    # ✅ Vinculado com o ID real mapeado pelo console
                     dados_formulario = {
                         "entry.2087142219": re_input,
                         "entry.1719783905": nome_func,
@@ -220,7 +222,7 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                                 server.quit()
                                 st.write(f"📧 E-mail enviado para o Gestor {nome_gestor} ({depto_grupo})!")
                             except Exception as ex:
-                                sucesso_geral = False
+                                successo_geral = False
                                 st.write(f"❌ Falha para o depto {depto_grupo}: {ex}")
                     
                 if sucesso_geral:
@@ -232,6 +234,147 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             st.dataframe(df_alertas_final, use_container_width=True, hide_index=True)
         else:
             st.success("🎉 Nenhum registro encontrado!")
+
+# ==============================================================================
+# MÓDULO NOVO: 📄 GERAR FICHA DE EPI DIGITAL (EM PDF)
+# ==============================================================================
+elif menu == "📄 Gerar Ficha de EPI":
+    st.header("📄 Módulo de Emissão de Ficha de EPI - NR-6")
+    st.markdown("Busque o histórico de um trabalhador para emitir o termo impresso assinado.")
+    
+    re_busca = st.text_input("Digite o RE do Colaborador para buscar a Ficha:").strip()
+    
+    if re_busca:
+        # Busca dados fixos do funcionário
+        func_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(re_busca)]
+        
+        if func_match.empty:
+            st.error("❌ RE não cadastrado na base de dados.")
+        else:
+            nome_colaborador = func_match.iloc[0, 1]
+            depto_colaborador = func_match.iloc[0, 2]
+            
+            st.info(f"👤 **Trabalhador Localizado:** {nome_colaborador} | **Setor:** {depto_colaborador}")
+            
+            # Carrega e isola o histórico de entregas reais dele
+            try:
+                df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
+            except:
+                df_hist = pd.DataFrame()
+                
+            if df_hist.empty:
+                st.warning("⚠️ Nenhuma entrega gravada no sistema para este RE até o momento.")
+            else:
+                colunas = list(df_hist.columns)
+                if len(colunas) >= 5:
+                    if 'Carimbo' in colunas[0] or 'Timestamp' in colunas[0]:
+                        df_hist.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas[6:]
+                    else:
+                        df_hist.columns = ['RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas[5:]
+                
+                # Filtra apenas as linhas pertencentes a este RE específico
+                df_filtrado_func = df_hist[df_hist['RE'].astype(str).str.strip() == str(re_busca)].copy()
+                
+                if df_filtrado_func.empty:
+                    st.warning("⚠️ Nenhuma entrega localizada para este RE no histórico de respostas.")
+                else:
+                    st.markdown("### Histórico de Itens a serem inclusos na Ficha")
+                    
+                    # Cria um dicionário auxiliar para injetar o CA correto na tabela visual
+                    dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
+                    df_filtrado_func['CA'] = df_filtrado_func['EPI'].map(dicionario_ca).fillna("N/A")
+                    df_filtrado_func['Quantidade'] = df_filtrado_func['Quantidade'].fillna("1")
+                    
+                    st.dataframe(df_filtrado_func[['Data_Entrega', 'EPI', 'CA', 'Quantidade']], use_container_width=True, hide_index=True)
+                    
+                    # ==========================================================
+                    # BOTÃO DE MONTAGEM E DOWNLOAD DO PDF (REPORTLAB)
+                    # ==========================================================
+                    buffer = io.BytesIO()
+                    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+                    elementos_pdf = []
+                    
+                    estilos = getSampleStyleSheet()
+                    estilo_titulo = ParagraphStyle('Titulo', parent=estilos['Heading1'], fontName='Helvetica-Bold', fontSize=16, alignment=1, spaceAfter=20)
+                    estilo_sub = ParagraphStyle('Sub', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=11, spaceAfter=8)
+                    estilo_texto = ParagraphStyle('Texto', parent=estilos['Normal'], fontName='Helvetica', fontSize=10, leading=14, spaceAfter=15, alignment=4)
+                    estilo_tabela = ParagraphStyle('Tab', parent=estilos['Normal'], fontName='Helvetica', fontSize=9, leading=11)
+                    estilo_tabela_header = ParagraphStyle('TabH', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=11, textColor=colors.white)
+                    
+                    # 1. Cabeçalho
+                    elementos_pdf.append(Paragraph("SEMASA - SERVIÇO MUNICIPAL DE SANEAMENTO AMBIENTAL DE SANTO ANDRÉ", estilo_titulo))
+                    elementos_pdf.append(Paragraph("FICHA DE CONTROLE E REGISTRO DE ENTREGA DE EPI", ParagraphStyle('SubT', parent=estilo_titulo, fontSize=13, spaceAfter=25)))
+                    
+                    # 2. Dados Finais do Trabalhador
+                    elementos_pdf.append(Paragraph(f"<b>RE:</b> {re_busca} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Colaborador:</b> {nome_colaborador}", estilo_sub))
+                    elementos_pdf.append(Paragraph(f"<b>Departamento / Setor:</b> {depto_colaborador}", estilo_sub))
+                    elementos_pdf.append(Spacer(1, 15))
+                    
+                    # 3. Termo Genérico em total conformidade com a NR-6 e CLT
+                    termo_nr6 = """
+                    <b>TERMO DE RESPONSABILIDADE E COMPROMISSO (NR-6)</b><br/><br/>
+                    Declaramos para os devidos fins que recebi do SEMASA, a título gratuito, os Equipamentos de Proteção Individual (EPIs) constantes na listagem abaixo, adequados ao risco das minhas atividades operacionais. 
+                    Comprometo-me a utilizá-los obrigatoriamente durante toda a jornada de trabalho, zelar pela sua perfeita guarda, conservação e higienização, e comunicar imediatamente ao setor de Segurança do Trabalho qualquer alteração que o torne impróprio para o uso. 
+                    Estou ciente de que o fornecimento é gratuito, porém a perda injustificada ou dano intencional poderá acarretar em desconto em folha, e o não cumprimento do uso obrigatório constitui ato faltoso passível de punições disciplinares cabíveis conforme o Artigo 158 da CLT.
+                    """
+                    elementos_pdf.append(Paragraph(termo_nr6, estilo_texto))
+                    elementos_pdf.append(Spacer(1, 10))
+                    
+                    # 4. Estruturação da Tabela de Entregas no PDF
+                    dados_tabela = [[Paragraph("Data Entrega", estilo_tabela_header), Paragraph("Equipamento (EPI)", estilo_tabela_header), Paragraph("CA do Ministério", estilo_tabela_header), Paragraph("Quantidade", estilo_tabela_header)]]
+                    
+                    for _, r in df_filtrado_func.iterrows():
+                        dados_tabela.append([
+                            Paragraph(str(r['Data_Entrega']), estilo_tabela),
+                            Paragraph(str(r['EPI']), estilo_tabela),
+                            Paragraph(str(r['CA']), estilo_tabela),
+                            Paragraph(str(r['Quantidade']), estilo_tabela)
+                        ])
+                        
+                    tabela_pdf = Table(dados_tabela, colWidths=[90, 240, 110, 80])
+                    tabela_pdf.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+                        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+                        ('TOPPADDING', (0,0), (-1,0), 6),
+                        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f9f9f9')]),
+                        ('BOTTOMPADDING', (0,1), (-1,-1), 5),
+                        ('TOPPADDING', (0,1), (-1,-1), 5),
+                    ]))
+                    elementos_pdf.append(tabela_pdf)
+                    elementos_pdf.append(Spacer(1, 40))
+                    
+                    # 5. Assinatura e Datação
+                    data_hoje = datetime.now().strftime('%d/%m/%Y')
+                    elementos_pdf.append(Paragraph(f"Santo André, {data_hoje}.", estilo_texto))
+                    elementos_pdf.append(Spacer(1, 30))
+                    
+                    dados_assinatura = [
+                        ["__________________________________________________", "__________________________________________________"],
+                        ["Assinatura do Colaborador", "Setor de Segurança do Trabalho - HST"]
+                    ]
+                    tab_assinatura = Table(dados_assinatura, colWidths=[260, 260])
+                    tab_assinatura.setStyle(TableStyle([
+                        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                        ('FONTNAME', (0,1), (-1,1), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0,1), (-1,1), 9),
+                    ]))
+                    elementos_pdf.append(tab_assinatura)
+                    
+                    doc.build(elementos_pdf)
+                    pdf_pronto = buffer.getvalue()
+                    buffer.close()
+                    
+                    st.markdown("---")
+                    st.download_button(
+                        label="🖨️ IMPRIMIR / BAIXAR FICHA DE EPI EM PDF",
+                        data=pdf_pronto,
+                        file_name=f"Ficha_EPI_RE_{re_busca}.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
 
 elif menu == "Visualizar Tabelas Reais":
     st.header("📊 Dados Atuais do Google Sheets")
