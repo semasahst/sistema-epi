@@ -19,8 +19,8 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587                 
 
 # ⚠️ COLOQUE SEU GMAIL E SUA SENHA DE APP DE 16 LETRAS AQUI:
-EMAIL_REMETENTE = "seu_email_aqui@gmail.com" 
-EMAIL_SENHA = "abcd efgh ijkl mnop"  
+EMAIL_REMETENTE = "semasa.hst@gmail.com" 
+EMAIL_SENHA = "hst.semasa"  
 
 # ID da sua planilha do Google Sheets para LEITURA
 CHAVE_PLANILHA = "1vL-5EqVshfUAmJY-3DlMfRpxtgfCvD5TaNLCxU4BPUE"
