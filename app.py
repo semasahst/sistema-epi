@@ -72,7 +72,7 @@ def construir_base_alertas():
         # ✍️ RECONHECIMENTO INTEGRADO DE FILTROS DE ASSINATURA PENDENTE
         if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
             status_assinatura = "Pendente"
-            # Limpa o texto complementar da célula de data para coletar o dia (Ex: 2026-07-06)
+            # Limpa o texto complementar da célula de data para coletar o dia
             if len(raw_data_entrega) >= 10:
                 raw_data_entrega = raw_data_entrega[:10].strip()
         else:
@@ -123,7 +123,7 @@ def construir_base_alertas():
             "Assinatura": status_assinatura
         })
         
-    return pd.DataFrame(linhas_processed) if linhas_processadas else pd.DataFrame()
+    return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
 # Criação do DataFrame central unificado do ecossistema do app
 df_base_completa = construir_base_alertas()
@@ -187,7 +187,6 @@ else:
         with col_g2:
             st.markdown("#### Distribuição de Consumo por Modelo de EPI")
             if not df_dash.empty:
-                # Groupby corrigido e validado explicitamente com a coluna estruturada 'EPI'
                 df_ranking = df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False)
                 st.bar_chart(data=df_ranking, x='EPI', y='Qtd', use_container_width=True)
             else:
