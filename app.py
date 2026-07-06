@@ -176,7 +176,9 @@ elif menu == "Lançar Entrega":
     with col2:
         data_entrega = st.date_input("Data da Entrega", datetime.now())
         
-    lista_opcoes_epis = [df_epis.iloc[i, 0] + " (CA: " + df_epis.iloc[i, 1] + ")" for i in range(len(df_epis))] if not df_epis.empty else []
+    lista_opcoes_epis = []
+    if not df_epis.empty:
+        lista_opcoes_epis = (df_epis.iloc[:, 0].astype(str) + " (CA: " + df_epis.iloc[:, 1].astype(str) + ")").tolist()
     epis_selecionados = st.multiselect("Selecione os EPIs:", lista_opcoes_epis)
     qtd_entrega = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
     
