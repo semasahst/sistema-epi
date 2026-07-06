@@ -52,7 +52,7 @@ except:
     st.stop()
 
 # ==============================================================================
-# FUNÇÃO AUXILIAR: PROCESSAMENTO GERAL E ALINHAMENTO DE COLUNAS
+# FUNÇÃO AUXILIAR: PROCESSAMENTO DINÂMICO E MAPEAMENTO DAS COLUNAS REAIS
 # ==============================================================================
 def processar_dados_alertas():
     try:
@@ -63,51 +63,74 @@ def processar_dados_alertas():
     if df_hist.empty:
         return pd.DataFrame()
         
-    colunas_disponiveis = list(df_hist.columns)
-    if len(colunas_disponiveis) >= 6:
-        df_hist.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas_disponiveis[6:]
-    else:
-        return pd.DataFrame()
-        
-    # Tratamento emergencial se a coluna de data vier em branco/None
-    df_hist['Data_Entrega'] = df_hist['Data_Entrega'].fillna(df_hist['Timestamp'].astype(str).str.split().str[0])
-    df_hist['Data_Entrega_Parsed'] = pd.to_datetime(df_hist['Data_Entrega'], errors='coerce')
-    
-    # Se falhou total, usa a data de hoje como fallback para não quebrar a lógica de dias restantes
-    df_hist['Data_Entrega_Parsed'] = df_hist['Data_Entrega_Parsed'].fillna(datetime.now())
-    
-    dicionario_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
-    dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
-    
+    # Mapeamento dinâmico baseado nos nomes reais que estão na linha 1 da sua planilha (image_e04ebe.png)
+    # Evita quebrar se as colunas mudarem de ordem física
+    col_timestamp = df_hist.columns[0]
+    col_re = 'RE' if 'RE' in df_hist.columns else df_hist.columns[1]
+    col_func = 'Funcionário' if 'Funcionário' in df_hist.columns else df_hist.columns[2]
+    col_epi = 'EPI' if 'EPI' in df_hist.columns else df_hist.columns[3]
+    col_data = 'Data' if 'Data' in df_hist.columns else ('Data_Entrega' if 'Data_Entrega' in df_hist.columns else df_hist.columns[4])
+    col_qtd = 'Quantidade' if 'Quantidade' in df_hist.columns else df_hist.columns[5]
+
     linhas_alertas = []
     hoje = datetime.now()
     
-    df_ultimas = df_hist.sort_values('Data_Entrega_Parsed').groupby(['RE', 'EPI']).last().reset_index()
+    # Dicionários de apoio baseados nas tabelas auxiliares
+    dicionario_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
+    dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
-    for _, row in df_ultimas.iterrows():
-        nome_epi = str(row['EPI']).strip()
-        dt_entrega = row['Data_Entrega_Parsed']
-        dt_vencimento = dt_entrega + timedelta(days=dicionario_validades.get(nome_epi, 90))
+    for _, row in df_hist.iterrows():
+        # Captura os dados brutos usando as colunas mapeadas
+        re_val = str(row[col_re]).strip()
+        nome_func = str(row[col_func]).strip()
+        nome_epi = str(row[col_epi]).strip()
+        qtd_val = str(row[col_qtd]).strip()
+        raw_timestamp = str(row[col_timestamp]).strip()
+        raw_data_entrega = str(row[col_data]).strip()
+        
+        # 🛠️ CORREÇÃO OPERACIONAL ANTI-DESALINHAMENTO (Trata o bug visível na imagem e04ebe)
+        # Se o sistema detectar que a data foi parar no campo do EPI, ele joga o valor correto de volta
+        if "-" in nome_epi and len(nome_epi) == 10:
+            # Inversão: o que estava no campo Data vira o EPI, e o que estava no EPI vira a Data
+            nome_epi_correto = raw_data_entrega
+            raw_data_entrega = nome_epi
+            nome_epi = nome_epi_correto
+
+        if not re_val or re_val == 'nan':
+            continue
+            
+        # Tratamento seguro da Data de Entrega (aceitando tanto padrão ISO quanto BR)
+        dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
+        if pd.isnull(dt_entrega_parsed):
+            # Fallback caso a data esteja em branco: extrai a data do Carimbo de Data/Hora (Timestamp)
+            dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
+        if pd.isnull(dt_entrega_parsed):
+            dt_entrega_parsed = hoje
+            
+        # Define os critérios de validade
+        dias_validade = dicionario_validades.get(nome_epi, 90)
+        dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
+        
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        info_assinatura = str(row['Timestamp']) 
-        status_assinatura = "Pendente" if "PENDENTE" in info_assinatura.upper() or "NFC" not in info_assinatura.upper() else "Assinado"
+        # Define se está assinado verificando o texto contido no carimbo de data/hora (Timestamp)
+        status_assinatura = "Assinado" if "NFC" in raw_timestamp.upper() or "ASSINADO" in raw_timestamp.upper() else "Pendente"
         
-        depto = "Não Informado"
+        # Procura o departamento correspondente ao funcionário
+        depto = "DMO" # Fallback comum do seu setor observado na imagem
         if not df_func.empty:
-            f_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(row['RE']).strip()]
+            f_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == re_val]
             if not f_match.empty: 
-                depto = f_match.iloc[0, 2]
-            
-        qtd_salva = int(row['Quantidade']) if 'Quantidade' in row and pd.notnull(row['Quantidade']) and str(row['Quantidade']).isdigit() else 1
+                depto = str(f_match.iloc[0, 2]).strip()
+        
+        qtd_salva = int(qtd_val) if qtd_val.isdigit() else 1
         
         linhas_alertas.append({
-            "RE": row['RE'], "Funcionário": row['Funcionário'], "Departamento": depto,
+            "RE": re_val, "Funcionário": nome_func, "Departamento": depto,
             "EPI": nome_epi, "CA": dicionario_ca.get(nome_epi, "N/A"), "Qtd": qtd_salva,
-            "Data Entrega": dt_entrega, "Data Vencimento": dt_vencimento,
-            "Dias Restantes": dias_restantes, "Status": status, "Assinatura": status_assinatura,
-            "Log_Original": info_assinatura
+            "Data Entrega": dt_entrega_parsed, "Data Vencimento": dt_vencimento,
+            "Dias Restantes": dias_restantes, "Status": status, "Assinatura": status_assinatura
         })
         
     return pd.DataFrame(linhas_alertas)
