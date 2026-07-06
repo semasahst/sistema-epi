@@ -130,19 +130,15 @@ def processar_dados_alertas():
     return pd.DataFrame(linhas_alertas)
 
 # ==============================================================================
-# BLOCO PRINCIPAL DE NAVEGAÇÃO E TRATAMENTO DE MENUS
+# MENU 1: DASHBOARD DE INDICADORES (VERSÃO COM GRÁFICO DE EPIS + EXPORTAÇÃO)
 # ==============================================================================
-# Certifique-se de que a variável 'menu' está recebendo o st.sidebar.selectbox corretamente antes disso
-# Exemplo: menu = st.sidebar.selectbox("Navegação", ["Dashboard", "Lançar Entrega", "⚠️ EPIs Vencidos/A Vencer", "📄 Gerar Ficha de EPI"])
-
-if menu == "Dashboard":
+elif menu == "Dashboard":
     st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
     
     # 1. Filtros Globais de Tempo e Escopo do Dashboard
     st.markdown("### 📅 Filtros de Análise Temporal")
     col_d1, col_d2, col_d3 = st.columns(3)
     
-    # Executa a função auxiliar de processamento
     df_base_completa = processar_dados_alertas()
     
     with col_d1:
@@ -198,7 +194,7 @@ if menu == "Dashboard":
 
             st.markdown("---")
 
-            # 4. Gráficos de Distribuição por Departamento
+            # 4. LINHA DE GRÁFICOS 1: Análise por Setores / Departamentos
             st.markdown("### 🏢 Análise de Distribuição Gerencial por Setores")
             col_g1, col_g2 = st.columns(2)
             
@@ -242,6 +238,34 @@ if menu == "Dashboard":
                         showlegend=False
                     )
                     st.plotly_chart(fig_pizza, use_container_width=True)
+
+            st.markdown("---")
+
+            # 5. LINHA DE GRÁFICOS 2: Novo Gráfico de Consumo por Tipo de EPI
+            st.markdown("### 🦺 Volumetria de Consumo e Distribuição de EPIs")
+            
+            # Agrupa por EPI e soma a coluna de quantidades reais
+            df_epi_ranking = df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=True)
+            
+            # Usamos um gráfico horizontal (y='EPI', x='Qtd') para que os nomes dos EPIs não fiquem cortados ou sobrepostos
+            fig_ranking_epis = px.bar(
+                df_epi_ranking,
+                x='Qtd',
+                y='EPI',
+                orientation='h',
+                text='Qtd',
+                labels={'Qtd': 'Quantidade Total Entregue', 'EPI': 'Equipamento de Proteção'},
+                color_discrete_sequence=['#16a085'] # Um tom verde/azul para diferenciar visualmente do gráfico de cima
+            )
+            fig_ranking_epis.update_traces(textposition='outside')
+            fig_ranking_epis.update_layout(
+                margin=dict(l=20, r=20, t=10, b=20),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                height=400 + (len(df_epi_ranking) * 20) # Ajusta a altura dinamicamente para não espremer os itens se a lista crescer
+            )
+            
+            st.plotly_chart(fig_ranking_epis, use_container_width=True)
 
             st.info(
                 "💡 **Dica de Apresentação:** Passe o mouse sobre qualquer um dos gráficos acima e clique na "
