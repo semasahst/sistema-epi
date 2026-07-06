@@ -218,9 +218,28 @@ elif menu == "Lançar Entrega":
             st.balloons()
 
 # ==============================================================================
-# MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES
+# MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES (CORRIGIDO)
 # ==============================================================================
-with aba_pendentes:
+elif menu == "⚠️ EPIs Vencidos/A Vencer":
+    st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
+    aba_vencidos, aba_pendentes = st.tabs(["🚨 Monitor de Validade (NR-6)", "📥 Assinaturas Pendentes"])
+    df_alertas_painel = processar_dados_alertas()
+    
+    try: 
+        df_gestores = pd.read_csv(URL_GESTORES, dtype=str).dropna(how='all')
+    except: 
+        df_gestores = pd.DataFrame()
+
+    with aba_vencidos:
+        if df_alertas_painel.empty:
+            st.info("Sem registros.")
+        else:
+            df_v = df_alertas_painel.copy()
+            df_v['Data Entrega'] = df_v['Data Entrega'].dt.strftime('%d/%m/%Y')
+            df_v['Data Vencimento'] = df_v['Data Vencimento'].dt.strftime('%d/%m/%Y')
+            st.dataframe(df_v, use_container_width=True, hide_index=True)
+
+    with aba_pendentes:
         if df_alertas_painel.empty:
             st.info("Nenhum registro encontrado.")
         else:
@@ -239,19 +258,15 @@ with aba_pendentes:
                 with col_f3:
                     data_fim_sel = st.date_input("Data Final do Lançamento:", datetime.now().date())
                 
-                # Filtro de Departamento
                 if filtro_depto_p:
                     df_p = df_p[df_p['Departamento'].isin(filtro_depto_p)]
                 
-                # 🛠️ CORREÇÃO DEFINITIVA DO FILTRO DE DATA BR VS. AMERICANO:
-                # Convertemos os seletores do Streamlit em objetos datetime comparáveis para evitar perdas por fuso horário ou milissegundos
+                # Normalização temporal para o Pandas comparar os formatos sem perdas
                 dt_inicio_timestamp = pd.to_datetime(data_inicio_sel)
-                dt_fim_timestamp = pd.to_datetime(data_fim_sel) + timedelta(days=1) - timedelta(seconds=1) # Estende até 23:59:59 do dia final
+                dt_fim_timestamp = pd.to_datetime(data_fim_sel) + timedelta(days=1) - timedelta(seconds=1)
                 
-                # Aplica o filtro de forma segura comparando timestamps reais do Pandas
                 df_p = df_p[(df_p['Data Entrega'] >= dt_inicio_timestamp) & (df_p['Data Entrega'] <= dt_fim_timestamp)]
                 
-                # Estrutura a tabela de visualização formatando apenas as strings de saída
                 df_p_exibicao = df_p.copy()
                 df_p_exibicao['Data Entrega'] = df_p_exibicao['Data Entrega'].dt.strftime('%d/%m/%Y')
                 df_p_exibicao['Data Vencimento'] = df_p_exibicao['Data Vencimento'].dt.strftime('%d/%m/%Y')
@@ -276,7 +291,7 @@ with aba_pendentes:
                                     msg = MIMEMultipart()
                                     msg['From'] = EMAIL_REMETENTE
                                     msg['To'] = email_gestor
-                                    msg['Subject'] = f"✍️ [HST Semasa] Convocação: Servidores Pendentes de Assinatura de EPI"
+                                    msg['Subject'] = "✍️ [HST Semasa] Convocação: Servidores Pendentes de Assinatura de EPI"
                                     
                                     html_tabela = ""
                                     for _, r in dados_grupo.iterrows():
@@ -294,8 +309,9 @@ with aba_pendentes:
                                         st.write(f"📧 Cobrança enviada para **{nome_gestor}**")
                                     except Exception as ex:
                                         st.write(f"❌ Erro ao enviar: {ex}")
+
 # ==============================================================================
-# MENU 4: GERAR FICHA DE EPI (TRATAMENTO COMPLETO DE SINTAXE E FALLBACK DE DATA)
+# MENU 4: GERAR FICHA DE EPI (ALINHADO E INDENTADO CORRETAMENTE)
 # ==============================================================================
 elif menu == "📄 Gerar Ficha de EPI":
     st.header("📄 Módulo de Emissão de Ficha de EPI Digital - NR-6")
@@ -330,24 +346,19 @@ elif menu == "📄 Gerar Ficha de EPI":
                     df_filtrado_func['CA'] = df_filtrado_func['EPI'].map(dicionario_ca).fillna("N/A")
                     df_filtrado_func['Quantidade'] = df_filtrado_func['Quantidade'].fillna("1")
                     
-                    # 🛠️ CAPTURA E BLINDAGEM CONTRA NONE/NAN NAS DATAS:
-                    # Se a coluna 'Data_Entrega' estiver vazia/None, extraímos do carimbo de data (Timestamp) do formulário
                     if 'Data_Entrega' in df_filtrado_func.columns:
                         df_filtrado_func['Data_Entrega'] = df_filtrado_func['Data_Entrega'].fillna(df_filtrado_func['Timestamp'].astype(str).str.split().str[0])
                     else:
                         df_filtrado_func['Data_Entrega'] = df_filtrado_func['Timestamp'].astype(str).str.split().str[0]
                         
-                    # Tratando strings e limpando nulos clássicos do pandas
                     df_filtrado_func['Data_Formatada'] = pd.to_datetime(df_filtrado_func['Data_Entrega'], errors='coerce')
                     df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].dt.strftime('%d/%m/%Y').fillna(df_filtrado_func['Data_Entrega'].astype(str).str.strip())
                     
-                    # Garantia contra qualquer variação textual de nulo
                     valores_nulos = ['nan', 'NaT', '<NA>', 'None', 'none', '']
                     df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].apply(lambda x: 'Não Consta' if str(x).strip() in valores_nulos or pd.isnull(x) else x)
                     
                     st.dataframe(df_filtrado_func[['Data_Formatada', 'EPI', 'CA', 'Quantidade']].rename(columns={'Data_Formatada': 'Data Entrega'}), use_container_width=True, hide_index=True)
                     
-                    # Estruturação e Construção do PDF (ReportLab)
                     buffer = io.BytesIO()
                     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
                     elementos_pdf = []
@@ -397,7 +408,6 @@ elif menu == "📄 Gerar Ficha de EPI":
                     buffer.close()
                     
                     st.download_button(label="🖨️ EXPORTAR FICHA DIGITAL AUDITADA (PDF)", data=pdf_pronto, file_name=f"Ficha_EPI_RE_{re_busca}_NFC.pdf", mime="application/pdf", type="primary")
-
 # ==============================================================================
 # MENU 5: VISUALIZAR TABELAS REAIS
 # ==============================================================================
