@@ -26,8 +26,8 @@ st.markdown("---")
 SMTP_SERVER = "smtp.gmail.com"  
 SMTP_PORT = 587                 
 
-EMAIL_REMETENTE = "seu_email_aqui@gmail.com" 
-EMAIL_SENHA = "abcd efgh ijkl mnop"  
+EMAIL_REMETENTE = "semasa.hst@gmail.com" 
+EMAIL_SENHA = "hst.semasa"  
 
 CHAVE_PLANILHA = "1vL-5EqVshfUAmJY-3DlMfRpxtgfCvD5TaNLCxU4BPUE"
 URL_FORM_POST = "https://docs.google.com/forms/d/e/1FAIpQLSfRZgRoIfEHUuanvhsMpkfXMSo7BslH_9Oj16nBNhIgSEw0Fg/formResponse"
