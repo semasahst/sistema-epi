@@ -53,17 +53,14 @@ except:
 # ==============================================================================
 def processar_dados_alertas():
     try:
-        # Lê a planilha de respostas como string para evitar distorções
         df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
     except Exception as e:
-        # Se houver erro de leitura, imprime no terminal do Streamlit para diagnóstico
         print(f"Erro ao ler CSV de respostas: {e}")
         return pd.DataFrame()
         
     if df_hist.empty:
         return pd.DataFrame()
         
-    # Identifica as colunas dinamicamente baseado na ordem e nome real da planilha
     col_timestamp = df_hist.columns[0]
     col_re = 'RE' if 'RE' in df_hist.columns else df_hist.columns[1]
     col_func = 'Funcionário' if 'Funcionário' in df_hist.columns else df_hist.columns[2]
@@ -72,9 +69,8 @@ def processar_dados_alertas():
     col_qtd = 'Quantidade' if 'Quantidade' in df_hist.columns else df_hist.columns[5]
 
     linhas_alertas = []
-    hoje = datetime.now().date()  # Trabalha estritamente com objeto date (sem horas)
+    hoje = pd.to_datetime(datetime.now().date())
     
-    # Cria os dicionários auxiliares a partir da tabela de EPIs cadastrados
     dicionario_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
     dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
@@ -86,41 +82,34 @@ def processar_dados_alertas():
         raw_timestamp = str(row[col_timestamp]).strip()
         raw_data_entrega = str(row[col_data]).strip()
         
-        # Ignora linhas em branco ou inválidas
         if not re_val or re_val == 'nan' or re_val == '':
             continue
 
-        # 📋 CAPTURA DE PENDÊNCIA ULTRA-ROBUSTA:
-        # Verifica se a palavra PENDENTE existe na célula de data ou se está explícita
+        # 📋 CAPTURA DE PENDÊNCIA
         if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
             status_assinatura = "Pendente"
-            # Filtra e extrai cirurgicamente os primeiros 10 caracteres (Ex: 2026-07-06)
             if len(raw_data_entrega) >= 10:
                 raw_data_entrega = raw_data_entrega[:10].strip()
         else:
             status_assinatura = "Assinado"
             
-        # Conversão de datas segura para formato .date() puro (essencial para o Streamlit)
+        # Conversão robusta via Pandas
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
         
-        # Fallback de segurança se tudo falhar
         if pd.isnull(dt_entrega_parsed):
-            dt_entrega_parsed = datetime.now()
+            dt_entrega_parsed = hoje
             
-        # Extrai apenas a parte da data (objeto datetime.date puro, sem hh:mm:ss)
-        data_entrega_final = dt_entrega_parsed.date()
+        # Força o horário para 00:00:00 no padrão do Pandas para evitar erros nas comparações
+        dt_entrega_parsed = pd.to_datetime(dt_entrega_parsed.date())
             
-        # Cálculos de validade e prazos
         dias_validade = dicionario_validades.get(nome_epi, 90)
-        data_vencimento_final = data_entrega_final + timedelta(days=dias_validade)
-        dias_restantes = (data_vencimento_final - hoje).days
+        dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
+        dias_restantes = (dt_vencimento - hoje).days
         
-        # Define os alertas visuais
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Mapeamento do Departamento via tabela de funcionários (tb_funcionarios)
         depto = "Não Informado"
         if not df_func.empty:
             re_limpo_busca = re_val.split('.')[0].strip()
@@ -128,7 +117,6 @@ def processar_dados_alertas():
             if not f_match.empty: 
                 depto = str(f_match.iloc[0, 2]).strip()
         
-        # Tratamento numérico da Quantidade
         try:
             qtd_salva = int(float(qtd_val))
         except:
@@ -141,8 +129,8 @@ def processar_dados_alertas():
             "EPI": nome_epi, 
             "CA": dicionario_ca.get(nome_epi, "N/A"), 
             "Qtd": qtd_salva,
-            "Data Entrega": data_entrega_final,  # Objeto date puro
-            "Data Vencimento": data_vencimento_final,  # Objeto date puro
+            "Data Entrega": dt_entrega_parsed, 
+            "Data Vencimento": dt_vencimento,
             "Dias Restantes": dias_restantes, 
             "Status": status, 
             "Assinatura": status_assinatura
@@ -239,25 +227,25 @@ if menu == "Dashboard":
 
             st.markdown("---")
 
-            # 5. LINHA DE GRÁFICOS 2: Ranking de Consumo por Tipo de EPI
-            st.markdown("### 🦺 Volumetria de Consumo e Distribuição de EPIs")
-            df_epi_ranking = df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=True)
+            # 5. LINHA DE GRÁFICOS 2: Ranking de Consumo por Tipo de 
+            st.markdown("### 🦺 Volumetria de Consumo e Distribuição de s")
+            df__ranking = df_dash.groupby('')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=True)
             
-            fig_ranking_epis = px.bar(
-                df_epi_ranking, x='Qtd', y='EPI', orientation='h', text='Qtd',
-                labels={'Qtd': 'Quantidade Total', 'EPI': 'EPI'}, color_discrete_sequence=['#16a085']
+            fig_ranking_s = px.bar(
+                df__ranking, x='Qtd', y='', orientation='h', text='Qtd',
+                labels={'Qtd': 'Quantidade Total', '': ''}, color_discrete_sequence=['#16a085']
             )
-            fig_ranking_epis.update_traces(textposition='outside')
-            fig_ranking_epis.update_layout(
+            fig_ranking_s.update_traces(textposition='outside')
+            fig_ranking_s.update_layout(
                 margin=dict(l=20, r=20, t=10, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                height=400 + (len(df_epi_ranking) * 20)
+                height=400 + (len(df__ranking) * 20)
             )
-            st.plotly_chart(fig_ranking_epis, use_container_width=True)
+            st.plotly_chart(fig_ranking_s, use_container_width=True)
 # ==============================================================================
 # MENU 2: LANÇAR ENTREGA (CORRIGIDO E INTEGRADO AO SISTEMA DE PENDÊNCIAS)
 # ==============================================================================
 elif menu == "Lançar Entrega":
-    st.header("📋 Registrar Nova Entrega de EPI")
+    st.header("📋 Registrar Nova Entrega de ")
     col1, col2 = st.columns(2)
     with col1:
         re_input = st.text_input("Digite o RE do Funcionário:").strip()
@@ -274,15 +262,15 @@ elif menu == "Lançar Entrega":
     with col2:
         data_entrega = st.date_input("Data da Entrega", datetime.now())
         
-    # CORREÇÃO SEGURA DA LISTAGEM DE EPIS
-    lista_opcoes_epis = []
-    if not df_epis.empty:
-        for _, row in df_epis.iterrows():
+    # CORREÇÃO SEGURA DA LISTAGEM DE S
+    lista_opcoes_s = []
+    if not df_s.empty:
+        for _, row in df_s.iterrows():
             nome_e = str(row.iloc[0]).strip()
             ca_e = str(row.iloc[1]).strip() if len(row) > 1 else "N/A"
-            lista_opcoes_epis.append(f"{nome_e} (CA: {ca_e})")
+            lista_opcoes_s.append(f"{nome_e} (CA: {ca_e})")
             
-    epis_selecionados = st.multiselect("Selecione os EPIs:", lista_opcoes_epis)
+    s_selecionados = st.multiselect("Selecione os s:", lista_opcoes_s)
     qtd_entrega = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
     
     st.markdown("---")
@@ -298,8 +286,8 @@ elif menu == "Lançar Entrega":
     if st.button("🚀 CONFIRMAR E GRAVAR LANÇAMENTO", type="primary"):
         if not re_input or not nome_func:
             st.error("Insira um RE válido.")
-        elif len(epis_selecionados) == 0:
-            st.error("Selecione o EPI.")
+        elif len(s_selecionados) == 0:
+            st.error("Selecione o .")
         elif not ausente and not nfc_bip:
             st.error("❌ Erro: Aproxime o crachá ou marque a caixa 'Funcionário Ausente' para prosseguir.")
         elif not ausente and uid_cadastrado and nfc_bip.lstrip('0') != uid_cadastrado.lstrip('0'):
@@ -314,11 +302,11 @@ elif menu == "Lançar Entrega":
                 else:
                     data_final_envio = data_base_iso
                 
-                for epi_formatado in epis_selecionados:
+                for _formatado in s_selecionados:
                     dados_formulario = {
                         "entry.2087142219": re_input,
                         "entry.1719783905": nome_func,
-                        "entry.791852446": epi_formatado.split(" (CA:")[0].strip(),
+                        "entry.791852446": _formatado.split(" (CA:")[0].strip(),
                         "entry.1336399804": data_final_envio, # <-- Enviando a marcação de pendência aqui!
                         "entry.342195985": str(qtd_entrega)
                     }
@@ -333,13 +321,11 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
     if df_alertas_geral.empty:
         st.warning("Nenhum registro logístico foi processado ou a planilha está inacessível no momento.")
     else:
-        # Abas da Interface
         aba_validade, aba_assinaturas = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
         
         # --- ABA 1: MONITOR DE VALIDADE ---
         with aba_validade:
             st.markdown("### 🔍 Validade dos EPIs Fornecidos")
-            # Mostra todos os itens ordenados pelos que vão vencer primeiro
             st.dataframe(df_alertas_geral.sort_values(by="Dias Restantes"), use_container_width=True)
             
         # --- ABA 2: ASSINATURAS PENDENTES ---
@@ -357,12 +343,16 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             with col_f3:
                 data_fim_p = st.date_input("Data Final do Lançamento:", datetime.now().date() + timedelta(days=1), key="fim_p")
                 
-            # Filtra os dados usando objetos de data puros (date) salvos no Dataframe
+            # 🛠️ CONVERSÃO DE SEGURANÇA: Transforma os inputs da tela em Timestamps do Pandas
+            dt_i = pd.to_datetime(data_ini_p)
+            dt_f = pd.to_datetime(data_fim_p)
+            
+            # Filtra os dados com sucesso sem misturar tipos de dados
             df_pendentes = df_alertas_geral[
                 (df_alertas_geral['Assinatura'] == "Pendente") & 
                 (df_alertas_geral['Departamento'].isin(depto_sel)) &
-                (df_alertas_geral['Data Entrega'] >= data_ini_p) & 
-                (df_alertas_geral['Data Entrega'] <= data_fim_p)
+                (df_alertas_geral['Data Entrega'] >= dt_i) & 
+                (df_alertas_geral['Data Entrega'] <= dt_f)
             ]
             
             st.markdown(f"📋 **Pendências Filtradas:** {len(df_pendentes)} itens encontrados.")
