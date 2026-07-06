@@ -169,7 +169,7 @@ if menu == "📊 Dashboard de Gestão":
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==============================================================================
-# MENU 2: LANÇAR ENTREGA (CORRIGIDO PROBLEMA DA LINHA 179)
+# MENU 2: LANÇAR ENTREGA (CORRIGIDO E INTEGRADO AO SISTEMA DE PENDÊNCIAS)
 # ==============================================================================
 elif menu == "Lançar Entrega":
     st.header("📋 Registrar Nova Entrega de EPI")
@@ -189,7 +189,7 @@ elif menu == "Lançar Entrega":
     with col2:
         data_entrega = st.date_input("Data da Entrega", datetime.now())
         
-    # CORREÇÃO SEGURA DA LISTAGEM DE EPIS (Substituindo laços frágeis por list comprehension segura)
+    # CORREÇÃO SEGURA DA LISTAGEM DE EPIS
     lista_opcoes_epis = []
     if not df_epis.empty:
         for _, row in df_epis.iterrows():
@@ -221,49 +221,25 @@ elif menu == "Lançar Entrega":
             st.error("🚨 ERRO DE IDENTIDADE: Crachá não pertence a este RE!")
         else:
             with st.spinner("Gravando registro no Google Sheets..."):
-                timestamp_token = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                log_seguranca = f"PENDENTE" if ausente else f"Assinado via Crachá NFC UID:{nfc_bip} em {timestamp_token}"
+                # 🛠️ TRATAMENTO JURÍDICO DO FORMATO DE DATA:
+                # Se estiver ausente, injeta a string para a nova função "processar_dados_alertas" capturar
+                data_base_iso = data_entrega.strftime('%Y-%m-%d')
+                if ausente:
+                    data_final_envio = f"{data_base_iso} - PENDENTE"
+                else:
+                    data_final_envio = data_base_iso
                 
                 for epi_formatado in epis_selecionados:
                     dados_formulario = {
                         "entry.2087142219": re_input,
                         "entry.1719783905": nome_func,
                         "entry.791852446": epi_formatado.split(" (CA:")[0].strip(),
-                        "entry.1336399804": data_entrega.strftime('%Y-%m-%d'),
+                        "entry.1336399804": data_final_envio, # <-- Enviando a marcação de pendência aqui!
                         "entry.342195985": str(qtd_entrega)
                     }
-# ... (dentro do botão de enviar o lançamento)
-        
-        # 1. Captura a data selecionada no formulário do Streamlit
-        data_string_base = data_entrega.strftime('%Y-%m-%d')
-        
-        # 2. SE a caixinha "Funcionário Ausente / Entrega Indireta" estiver marcada,
-        # nós injetamos a palavra PENDENTE para que o painel saiba disso depois.
-        if st.session_state.get('funcionario_ausente', False): # Ajuste o nome da sua variável se for diferente
-            data_final_envio = f"{data_string_base} - PENDENTE"
-        else:
-            data_final_envio = data_string_base
-
-        # 3. Monta o dicionário com as entries do seu Google Forms
-        dados_formulario = {
-            "entry.123456789": re_input,       # Substitua pelos números reais das suas entries
-            "entry.987654321": nome_funcionario,
-            "entry.111222333": epi_selecionado,
-            "entry.444555666": data_final_envio, # <--- Aqui vai a data tratada (limpa ou com o "PENDENTE")
-            "entry.777888999": qtd_input
-        }
-        
-        # 4. Envia para a planilha
-        try:
-            resposta = requests.post(URL_FORM_POST, data=dados_formulario)
-            if resposta.status_code == 200:
-                st.success("✅ Entrega registrada com sucesso!")
-            else:
-                st.error("❌ Falha ao salvar no banco de dados do Google.")
-        except Exception as e:
-            st.error(f"❌ Erro de conexão: {e}")
+                    requests.post(URL_FORM_POST, data=dados_formulario)
+            st.success("🎯 Registro concluído!")
             st.balloons()
-
 # ==============================================================================
 # MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES (CORRIGIDO)
 # ==============================================================================
