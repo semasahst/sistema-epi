@@ -201,7 +201,8 @@ elif menu == "Lançar Entrega":
             st.error("Selecione o EPI.")
         elif not ausente and not nfc_bip:
             st.error("❌ Erro: Aproxime o crachá ou marque a caixa 'Funcionário Ausente' para prosseguir.")
-        elif not ausente and uid_cadastrado and nfc_bip != uid_cadastrado:
+        # ABAIXO: Linha corrigida removendo os zeros à esquerda do leitor e da planilha
+        elif not ausente and uid_cadastrado and nfc_bip.lstrip('0') != uid_cadastrado.lstrip('0'):
             st.error("🚨 ERRO DE IDENTIDADE: Crachá não pertence a este RE!")
         else:
             with st.spinner("Gravando registro no Google Sheets..."):
@@ -220,12 +221,10 @@ elif menu == "Lançar Entrega":
                         "entry.791852446": epi_formatado.split(" (CA:")[0].strip(),
                         "entry.1336399804": data_entrega.strftime('%Y-%m-%d'),
                         "entry.342195985": str(qtd_entrega)
-                        # Nota: Envie o log_seguranca para o campo correto de observações do seu Forms se houver.
                     }
                     requests.post(URL_FORM_POST, data=dados_formulario)
             st.success("🎯 Registro concluído!")
             st.balloons()
-
 # ==============================================================================
 # MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES (Modificado com Filtros Manuais)
 # ==============================================================================
