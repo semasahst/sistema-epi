@@ -90,7 +90,17 @@ def processar_dados_alertas():
 
         if not re_val or re_val == 'nan' or re_val == '':
             continue
+
+        # 🛠️ NOVA CAPTURA ANTECIPADA DE ASSINATURA PENDENTE:
+        # Verifica se o texto "PENDENTE" existe em qualquer um dos campos antes de limpar a data
+        if "PENDENTE" in raw_timestamp.upper() or "PENDENTE" in raw_data_entrega.upper():
+            status_assinatura = "Pendente"
+            # Limpa o texto "- PENDENTE" da data para não quebrar o conversor do Pandas
+            raw_data_entrega = raw_data_entrega.upper().replace("- PENDENTE", "").strip()
+        else:
+            status_assinatura = "Assinado"
             
+        # Converte a data de entrega após a limpeza do texto de contingência
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
@@ -103,14 +113,6 @@ def processar_dados_alertas():
         
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # 🛠️ NOVA LÓGICA DE DETECÇÃO DE PENDÊNCIA:
-        # Só marcamos como "Pendente" se houver a palavra "PENDENTE" explícita gravada no registro, 
-        # caso contrário, o fluxo padrão com crachá (ou preenchimento comum do dia) é considerado Assinado.
-        if "PENDENTE" in raw_timestamp.upper() or "PENDENTE" in raw_data_entrega.upper():
-            status_assinatura = "Pendente"
-        else:
-            status_assinatura = "Assinado"
-        
         # Localiza o Departamento do servidor
         depto = "Não Informado"
         if not df_func.empty:
@@ -118,6 +120,7 @@ def processar_dados_alertas():
             if not f_match.empty: 
                 depto = str(f_match.iloc[0, 2]).strip()
         
+        # Garante o tratamento de quantidades mesmo se o campo estiver nulo ou vazio na planilha
         qtd_salva = int(qtd_val) if qtd_val.isdigit() else 1
         
         linhas_alertas.append({
@@ -128,7 +131,6 @@ def processar_dados_alertas():
         })
         
     return pd.DataFrame(linhas_alertas)
-
 # ==============================================================================
 # MENU 1: DASHBOARD DE INDICADORES (ESTRUTURA BLINDADA CONTRA ERRO DE SINTAXE)
 # ==============================================================================
