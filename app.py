@@ -6,16 +6,19 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
 # ==============================================================================
-# ENDEREÇOS DAS FONTES DE DADOS (GOOGLE SHEETS - VERSÃO EXPORTÁVEL PARA CSV)
+# ENDEREÇOS DAS FONTES DE DADOS (VEJA OS PASSOS ABAIXO SE CONTINUAR SEM CONEXÃO)
 # ==============================================================================
 URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=339151256"
 URL_FUNCIONARIOS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=1116669931"
 URL_EPIS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=754637684"
 
+# Modo de depuração para entender o vínculo com o Google
+erro_detalhado = None
+
 # ==============================================================================
 # CARREGAMENTO DOS DADOS OPERACIONAIS COM SISTEMA DE TRATAMENTO DE ERROS
 # ==============================================================================
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=5) # Reduzido temporariamente para testes rápidos
 def buscar_dados_planilhas():
     try:
         df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
@@ -30,12 +33,15 @@ df_func, df_epis = buscar_dados_planilhas()
 # ENGENHARIA DE DADOS MASTER: TRATAMENTO ROBUSTO DE ALERTAS E PENDÊNCIAS
 # ==============================================================================
 def construir_base_alertas():
+    global erro_detalhado
     try:
         df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
     except Exception as e:
+        erro_detalhado = f"Erro ao tentar acessar a URL do Google: {str(e)}"
         return pd.DataFrame()
         
     if df_hist.empty:
+        erro_detalhado = "A planilha foi acessada, mas retornou totalmente vazia."
         return pd.DataFrame()
         
     # Identificação estrutural baseada estritamente nas posições das colunas
@@ -133,7 +139,14 @@ menu = st.sidebar.selectbox("Escolha a Visão:", ["📊 Dashboard de Gestão", "
 
 if df_base_completa.empty:
     st.error("❌ Erro de comunicação com os servidores do Google Sheets ou nenhuma resposta registrada.")
-    st.info("Verifique a sua conexão com a internet ou as permissões de compartilhamento das planilhas.")
+    
+    # Exibe o diagnóstico real do que está acontecendo por trás dos panos
+    if erro_detalhado:
+        st.warning(f"🕵️ Diagnóstico Técnico: {erro_detalhado}")
+    else:
+        st.info("Nota: O arquivo foi baixado, mas os cabeçalhos de coluna de respostas não coincidem.")
+        
+    st.info("Verifique se o compartilhamento da planilha foi alterado ou modificado recentemente no Google Drive.")
 else:
 
     # ==============================================================================
