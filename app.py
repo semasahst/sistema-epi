@@ -46,6 +46,7 @@ def construir_base_alertas():
     col_data = df_hist.columns[4]
     col_qtd = df_hist.columns[5]
 
+    # Corrigido: Nome idêntico em todo o escopo da função
     linhas_processadas = []
     hoje = pd.to_datetime(datetime.now().date())
     
@@ -120,7 +121,6 @@ def construir_base_alertas():
             "Assinatura": status_assinatura
         })
         
-    # RETORNO CORRIGIDO: Agora aponta exatamente para a lista construída no laço
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
 # Criação do DataFrame central unificado
