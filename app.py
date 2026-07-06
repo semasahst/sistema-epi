@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Configuração global da página do Streamlit
+# Configuração global da página do Streamlit (Deve ser a primeira instrução)
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
 # ==============================================================================
@@ -18,12 +18,10 @@ URL_EPIS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFC
 @st.cache_data(ttl=15)
 def buscar_dados_planilhas():
     try:
-        # Tenta ler as planilhas de suporte forçando string para evitar perda de dados
         df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
         df_e = pd.read_csv(URL_EPIS, dtype=str).dropna(how='all')
         return df_f, df_e
     except Exception as e:
-        # Sistema de proteção se o link web falhar temporariamente
         return pd.DataFrame(), pd.DataFrame()
 
 df_func, df_epis = buscar_dados_planilhas()
@@ -72,7 +70,6 @@ def construir_base_alertas():
         # ✍️ RECONHECIMENTO INTEGRADO DE FILTROS DE ASSINATURA PENDENTE
         if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
             status_assinatura = "Pendente"
-            # Limpa o texto complementar da célula de data para coletar o dia
             if len(raw_data_entrega) >= 10:
                 raw_data_entrega = raw_data_entrega[:10].strip()
         else:
@@ -86,7 +83,7 @@ def construir_base_alertas():
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = hoje
             
-        # Limpeza definitiva de horas para blindar contra o erro de discrepância de tipos do Pandas
+        # Limpeza definitiva de horas para blindar contra discrepância de tipos
         dt_entrega_parsed = pd.to_datetime(dt_entrega_parsed.date())
             
         # Cálculo do ciclo de vida útil do equipamento de proteção
@@ -123,9 +120,10 @@ def construir_base_alertas():
             "Assinatura": status_assinatura
         })
         
+    # 🛠️ CORREÇÃO AQUI: Variável ajustada perfeitamente com o nome da lista acima
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
-# Criação do DataFrame central unificado do ecossistema do app
+# Criação do DataFrame central unificado
 df_base_completa = construir_base_alertas()
 
 # ==============================================================================
@@ -134,10 +132,9 @@ df_base_completa = construir_base_alertas()
 st.sidebar.markdown("## 🧭 Navegação Sistema")
 menu = st.sidebar.selectbox("Escolha a Visão:", ["📊 Dashboard de Gestão", "⚠️ EPIs Vencidos/A Vencer"])
 
-# Check de integridade estrutural das planilhas principais
 if df_base_completa.empty:
     st.error("❌ Erro de comunicação com os servidores do Google Sheets ou nenhuma resposta registrada.")
-    st.info("Verifique se o compartilhamento das planilhas está configurado como 'Qualquer pessoa com o link'.")
+    st.info("Verifique a sua conexão com a internet ou as permissões de compartilhamento das planilhas.")
 else:
 
     # ==============================================================================
@@ -153,7 +150,6 @@ else:
         with col_d2:
             data_fim_dash = st.date_input("Até:", datetime.now().date())
             
-        # Converte os controles temporais em Timestamps para compatibilidade indexada
         dt_i = pd.to_datetime(data_ini_dash)
         dt_f = pd.to_datetime(data_fim_dash)
         
@@ -162,7 +158,6 @@ else:
             (df_base_completa['Data Entrega'] <= dt_f)
         ]
         
-        # Blocos de Indicadores de Cartão (Métricas superiores)
         total_entregue = df_dash['Qtd'].sum() if not df_dash.empty else 0
         pendentes_qtd = len(df_dash[df_dash['Assinatura'] == "Pendente"]) if not df_dash.empty else 0
         vencidos_qtd = len(df_dash[df_dash['Status'] == "🔴 VENCIDO"]) if not df_dash.empty else 0
@@ -173,7 +168,6 @@ else:
         c3.metric("Itens Vencidos (NR-6)", vencidos_qtd)
         
         st.markdown("---")
-        
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
@@ -200,7 +194,6 @@ else:
         
         aba_validade, aba_assinaturas = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
         
-        # --- ABA 1: TABELA DE GERENCIAMENTO DE VALIDADE ---
         with aba_validade:
             st.markdown("### 🔍 Visão Ampla de Validade")
             df_exibicao_val = df_base_completa.copy()
@@ -208,7 +201,6 @@ else:
             df_exibicao_val['Data Vencimento'] = df_exibicao_val['Data Vencimento'].dt.strftime('%d/%m/%Y')
             st.dataframe(df_exibicao_val.sort_values(by="Dias Restantes"), use_container_width=True)
             
-        # --- ABA 2: MONITORAMENTO DE ASSINATURAS PENDENTES ---
         with aba_assinaturas:
             st.markdown("### 🔍 Triagem Avançada de Pendências")
             col_f1, col_f2, col_f3 = st.columns(3)
@@ -222,11 +214,9 @@ else:
             with col_f3:
                 data_fim_p = st.date_input("Fim Período:", datetime.now().date() + timedelta(days=1), key="fim_p")
                 
-            # Equalização dos seletores temporais com a tipagem do Pandas
             dt_i_p = pd.to_datetime(data_ini_p)
             dt_f_p = pd.to_datetime(data_fim_p)
             
-            # Executa o filtro unificado sem travar ou omitir dados antigos
             df_pendentes = df_base_completa[
                 (df_base_completa['Assinatura'] == "Pendente") & 
                 (df_base_completa['Departamento'].isin(depto_sel)) &
