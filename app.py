@@ -132,42 +132,125 @@ def processar_dados_alertas():
         
     return pd.DataFrame(linhas_alertas)
 # ==============================================================================
-# MENU 1: DASHBOARD DE GESTÃO
+# MENU 1: DASHBOARD DE INDICADORES (VERSÃO AVANÇADA COM EXPORTAÇÃO)
 # ==============================================================================
-if menu == "📊 Dashboard de Gestão":
-    st.header("📊 Painel de Indicadores Estratégicos - HST")
-    df_alertas_geral = processar_dados_alertas()
-        
-    if df_alertas_geral.empty:
-        st.info("ℹ️ Nenhum dado de entrega localizado.")
-    else:
-        total_entregas_num = len(df_alertas_geral)
-        funcionarios_atendidos = df_alertas_geral['RE'].nunique()
-        vencidos_qtd = len(df_alertas_geral[df_alertas_geral['Status'] == "🔴 VENCIDO"])
-        pendentes_assinatura = len(df_alertas_geral[df_alertas_geral['Assinatura'] == "Pendente"])
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric(label="📦 Total de EPIs Ativos", value=total_entregas_num)
-        c2.metric(label="👥 Colaboradores Cobertos", value=funcionarios_atendidos)
-        c3.metric(label="🚨 Contratos Vencidos", value=vencidos_qtd, delta=f"{vencidos_qtd} Urgentes", delta_color="inverse")
-        c4.metric(label="✍️ Assinaturas Pendentes", value=pendentes_assinatura, delta=f"{pendentes_assinatura} Cobrar", delta_color="inverse")
-        
-        st.markdown("---")
-        col_graf1, col_graf2 = st.columns(2)
-        with col_graf1:
-            st.markdown("### 🏆 Ranking de EPIs mais Utilizados")
-            df_epi_rank = df_alertas_geral.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False).head(8)
-            fig_bar = px.bar(df_epi_rank, x='Qtd', y='EPI', orientation='h', color='Qtd', color_continuous_scale='Blugrn')
-            st.plotly_chart(fig_bar, use_container_width=True)
+elif menu == "Dashboard":
+    st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
+    
+    # 1. Filtros Globais de Tempo e Escopo do Dashboard
+    st.markdown("### 📅 Filtros de Análise Temporal")
+    col_d1, col_d2, col_d3 = st.columns(3)
+    with col_d1:
+        data_ini_dash = st.date_input("Início da Análise:", datetime.now().date() - timedelta(days=90))
+    with col_d2:
+        data_fim_dash = st.date_input("Fim da Análise:", datetime.now().date())
+    with col_d3:
+        # Permite baixar o relatório consolidado do período filtrado para auditoria
+        df_base_completa = processar_dados_alertas()
+        if not df_base_completa.empty:
+            # Aplica o filtro de data antes de gerar o CSV para download
+            dt_i = pd.to_datetime(data_ini_dash)
+            dt_f = pd.to_datetime(data_fim_dash) + timedelta(days=1) - timedelta(seconds=1)
+            df_filtrado_periodo = df_base_completa[(df_base_completa['Data Entrega'] >= dt_i) & (df_base_completa['Data Entrega'] <= dt_f)]
             
-        with col_graf2:
-            st.markdown("### 📊 Regularidade Operacional")
-            df_status_pie = df_alertas_geral['Status'].value_counts().reset_index()
-            df_status_pie.columns = ['Status', 'Contagem']
-            mapa_cores = {"🟢 Regular": "#27ae60", "🟡 CRÍTICO (Até 15 dias)": "#f1c40f", "🔴 VENCIDO": "#e74c3c"}
-            fig_pie = px.pie(df_status_pie, values='Contagem', names='Status', color='Status', color_discrete_map=mapa_cores, hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            csv_buffer = df_filtrado_periodo.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 EXPORTAR DADOS FILTRADOS (CSV)",
+                data=csv_buffer,
+                file_name=f"Relatorio_HST_Semasa_{data_ini_dash}_a_{data_fim_dash}.csv",
+                mime="text/csv",
+                type="secondary",
+                help="Clique para baixar todos os registros deste período e usar em Excel ou relatórios."
+            )
 
+    st.markdown("---")
+
+    # 2. Processamento e Filtragem Temporal dos Dados
+    if df_base_completa.empty:
+        st.info("Nenhum dado logístico carregado para exibir os indicadores.")
+    else:
+        dt_i = pd.to_datetime(data_ini_dash)
+        dt_f = pd.to_datetime(data_fim_dash) + timedelta(days=1) - timedelta(seconds=1)
+        
+        # Filtra o dataframe principal baseado nas datas selecionadas
+        df_dash = df_base_completa[(df_base_completa['Data Entrega'] >= dt_i) & (df_base_completa['Data Entrega'] <= dt_f)].copy()
+
+        if df_dash.empty:
+            st.warning("⚠️ Não existem lançamentos ou movimentações no intervalo de datas selecionado.")
+        else:
+            # 3. Cartões de Métricas Dinâmicas (KPIs)
+            total_entregas = len(df_dash)
+            total_pendentes = len(df_dash[df_dash['Assinatura'] == "Pendente"])
+            total_vencidos = len(df_dash[df_dash['Status'] == "🔴 VENCIDO"])
+            
+            taxa_conformidade = ((total_entregas - total_pendentes) / total_entregas * 100) if total_entregas > 0 else 100
+
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            with kpi1:
+                st.metric("📦 Movimentações no Período", total_entregas)
+            with kpi2:
+                st.metric("✍️ Assinaturas Pendentes", total_pendentes, delta=f"{total_pendentes} pendências", delta_color="inverse")
+            with kpi3:
+                st.metric("🚨 EPIs Vencidos (NR-6)", total_vencidos, delta="Atenção", delta_color="off")
+            with kpi4:
+                st.metric("🔰 Índice de Conformidade", f"{taxa_conformidade:.1f}%")
+
+            st.markdown("---")
+
+            # 4. Gráficos de Distribuição por Departamento (Igual à Primeira Versão, mas Dinâmico)
+            st.markdown("### 🏢 Análise de Distribuição Gerencial por Setores")
+            
+            col_g1, col_g2 = st.columns(2)
+            
+            with col_g1:
+                st.markdown("##### Total de EPIs Entregues por Departamento")
+                # Agrupa por departamento e soma as quantidades reais entregues
+                df_depto = df_dash.groupby('Departamento')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False)
+                
+                fig_barras = px.bar(
+                    df_depto, 
+                    x='Departamento', 
+                    y='Qtd',
+                    text='Qtd',
+                    labels={'Qtd': 'Quantidade', 'Departamento': 'Setor / Unidade'},
+                    color_discrete_sequence=['#2c3e50']
+                )
+                fig_barras.update_traces(textposition='outside')
+                fig_barras.update_layout(
+                    margin=dict(l=20, r=20, t=10, b=20),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis={'categoryorder':'total descending'}
+                )
+                st.plotly_chart(fig_barras, use_container_width=True)
+
+            with col_g2:
+                st.markdown("##### Concentração de Pendências de Assinatura por Setor")
+                df_pend_depto = df_dash[df_dash['Assinatura'] == "Pendente"].groupby('Departamento').size().reset_index(name='Pendências')
+                
+                if df_pend_depto.empty:
+                    st.success("🎉 Zero pendências acumuladas no período selecionado!")
+                else:
+                    fig_pizza = px.pie(
+                        df_pend_depto, 
+                        values='Pendências', 
+                        names='Departamento',
+                        hole=0.4,
+                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    )
+                    fig_pizza.update_traces(textinfo='percent+label', pull=[0.05] * len(df_pend_depto))
+                    fig_pizza.update_layout(
+                        margin=dict(l=20, r=20, t=10, b=20),
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_pizza, use_container_width=True)
+
+            # 5. Dica de Exportação Visual para Apresentações e E-mails
+            st.info(
+                "💡 **Dica de Apresentação:** Passe o mouse sobre qualquer um dos gráficos acima e clique na "
+                "câmera fotográfica (**'Download plot as a png'**) na barra flutuante para salvar a imagem do gráfico perfeita, "
+                "pronta para anexar no seu PowerPoint, relatórios ou corpo do e-mail institucional."
+            )
 # ==============================================================================
 # MENU 2: LANÇAR ENTREGA (CORRIGIDO E INTEGRADO AO SISTEMA DE PENDÊNCIAS)
 # ==============================================================================
