@@ -2,49 +2,45 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Configuração da página (Deve ser sempre a primeira linha de código Streamlit)
+# Configuração global da página do Streamlit
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
 # ==============================================================================
-# LINKS DAS PLANILHAS (GOOGLE SHEETS - EXPORTADOS COMO CSV)
+# ENDEREÇOS DAS FONTES DE DADOS (GOOGLE SHEETS - VERSÃO EXPORTÁVEL PARA CSV)
 # ==============================================================================
-# Link base da planilha mãe
-LINK_BASE = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv"
-
-URL_RESPOSTAS = f"{LINK_BASE}&gid=339151256"
-URL_FUNCIONARIOS = f"{LINK_BASE}&gid=1116669931"
-URL_EPIS = f"{LINK_BASE}&gid=754637684"
+URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=339151256"
+URL_FUNCIONARIOS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=1116669931"
+URL_EPIS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=754637684"
 
 # ==============================================================================
-# CARREGAMENTO DOS DADOS DE APOIO (COM TRATAMENTO DE ERROS BRUTO)
+# CARREGAMENTO DOS DADOS OPERACIONAIS COM SISTEMA DE TRATAMENTO DE ERROS
 # ==============================================================================
-@st.cache_data(ttl=30)
-def carregar_tabelas_auxiliares():
+@st.cache_data(ttl=15)
+def buscar_dados_planilhas():
     try:
+        # Tenta ler as planilhas de suporte forçando string para evitar perda de dados
         df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
         df_e = pd.read_csv(URL_EPIS, dtype=str).dropna(how='all')
         return df_f, df_e
     except Exception as e:
-        # Fallback caso ocorra erro 404 ou instabilidade no Google Sheets
-        st.sidebar.error(f"⚠️ Instabilidade ao conectar com tabelas auxiliares. Usando tabelas vazias.")
+        # Sistema de proteção se o link web falhar temporariamente
         return pd.DataFrame(), pd.DataFrame()
 
-df_func, df_epis = carregar_tabelas_auxiliares()
+df_func, df_epis = buscar_dados_planilhas()
 
 # ==============================================================================
-# FUNÇÃO MASTER: PROCESSAMENTO UNIFICADO DE ALERTAS E PENDÊNCIAS
+# ENGENHARIA DE DADOS MASTER: TRATAMENTO ROBUSTO DE ALERTAS E PENDÊNCIAS
 # ==============================================================================
-def processar_dados_alertas():
+def construir_base_alertas():
     try:
         df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
     except Exception as e:
-        st.error(f"Erro crítico ao ler planilha de respostas: {e}")
         return pd.DataFrame()
         
     if df_hist.empty:
         return pd.DataFrame()
         
-    # Mapeamento dinâmico baseado estritamente na ordem física das colunas (Índices)
+    # Identificação estrutural baseada estritamente nas posições das colunas
     col_timestamp = df_hist.columns[0]
     col_re = df_hist.columns[1]
     col_func = df_hist.columns[2]
@@ -52,15 +48,15 @@ def processar_dados_alertas():
     col_data = df_hist.columns[4]
     col_qtd = df_hist.columns[5]
 
-    linhas_alertas = []
+    linhas_processadas = []
     hoje = pd.to_datetime(datetime.now().date())
     
-    # Monta os dicionários de consulta se a tabela de EPIs foi carregada com sucesso
-    dicionario_validades = {}
-    dicionario_ca = {}
+    # Dicionários dinâmicos de busca (EPI -> Validade / Código CA)
+    mapa_validades = {}
+    mapa_ca = {}
     if not df_epis.empty:
-        dicionario_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
-        dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
+        mapa_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
+        mapa_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
     for _, row in df_hist.iterrows():
         re_val = str(row[col_re]).strip()
@@ -73,15 +69,16 @@ def processar_dados_alertas():
         if not re_val or re_val == 'nan' or re_val == '':
             continue
 
-        # 📋 IDENTIFICAÇÃO DE PENDÊNCIAS EM QUALQUER COLUNA DE DATA
+        # ✍️ RECONHECIMENTO INTEGRADO DE FILTROS DE ASSINATURA PENDENTE
         if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
             status_assinatura = "Pendente"
+            # Limpa o texto complementar da célula de data para coletar o dia (Ex: 2026-07-06)
             if len(raw_data_entrega) >= 10:
                 raw_data_entrega = raw_data_entrega[:10].strip()
         else:
             status_assinatura = "Assinado"
             
-        # Conversão limpa para o formato de data do Pandas (Sem horas residuais)
+        # Tratamento de datas unificado via biblioteca do Pandas
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
@@ -89,71 +86,74 @@ def processar_dados_alertas():
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = hoje
             
-        # Zera as horas residuais de forma definitiva para evitar erros em comparações
+        # Limpeza definitiva de horas para blindar contra o erro de discrepância de tipos do Pandas
         dt_entrega_parsed = pd.to_datetime(dt_entrega_parsed.date())
             
-        # Busca as validades padrão da tabela de apoio ou assume 90 dias
-        dias_validade = dicionario_validades.get(nome_epi, 90)
+        # Cálculo do ciclo de vida útil do equipamento de proteção
+        dias_validade = mapa_validades.get(nome_epi, 90)
         dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
         
-        status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
+        status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Mapeamento do Departamento do funcionário
-        depto = "Não Informado"
+        # Mapeamento do setor do colaborador utilizando dados cruzados da tb_funcionarios
+        departamento = "Não Informado"
         if not df_func.empty:
             re_limpo_busca = re_val.split('.')[0].strip()
             f_match = df_func[df_func.iloc[:, 0].astype(str).str.split('.').str[0].str.strip() == re_limpo_busca]
             if not f_match.empty: 
-                depto = str(f_match.iloc[0, 2]).strip()
+                departamento = str(f_match.iloc[0, 2]).strip()
         
         try:
-            qtd_salva = int(float(qtd_val))
+            quantidade = int(float(qtd_val))
         except:
-            qtd_salva = 1
+            quantidade = 1
         
-        linhas_alertas.append({
+        linhas_processadas.append({
             "RE": re_val.split('.')[0].strip(),
             "Funcionário": nome_func, 
-            "Departamento": depto,
+            "Departamento": departamento,
             "EPI": nome_epi, 
-            "CA": dicionario_ca.get(nome_epi, "N/A"), 
-            "Qtd": qtd_salva,
+            "CA": mapa_ca.get(nome_epi, "N/A"), 
+            "Qtd": quantidade,
             "Data Entrega": dt_entrega_parsed, 
             "Data Vencimento": dt_vencimento,
             "Dias Restantes": dias_restantes, 
-            "Status": status, 
+            "Status": status_validade, 
             "Assinatura": status_assinatura
         })
         
-    return pd.DataFrame(linhas_alertas)
+    return pd.DataFrame(linhas_processed) if linhas_processadas else pd.DataFrame()
 
-# Processa a base master global do app
-df_base_completa = processar_dados_alertas()
-
-# ==============================================================================
-# MENU LATERAL DE NAVEGAÇÃO
-# ==============================================================================
-st.sidebar.markdown("## 🧭 Controle Operacional")
-menu = st.sidebar.selectbox("Selecione o Painel:", ["📊 Dashboard de Gestão", "⚠️ EPIs Vencidos/A Vencer"])
+# Criação do DataFrame central unificado do ecossistema do app
+df_base_completa = construir_base_alertas()
 
 # ==============================================================================
-# PAINEL 1: DASHBOARD DE GESTÃO
+# MENU LATERAL INTERATIVO
 # ==============================================================================
-if menu == "📊 Dashboard de Gestão":
-    st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
-    
-    st.markdown("### 📅 Filtros de Análise Temporal")
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        data_ini_dash = st.date_input("Início da Análise:", datetime.now().date() - timedelta(days=90))
-    with col_d2:
-        data_fim_dash = st.date_input("Fim da Análise:", datetime.now().date())
+st.sidebar.markdown("## 🧭 Navegação Sistema")
+menu = st.sidebar.selectbox("Escolha a Visão:", ["📊 Dashboard de Gestão", "⚠️ EPIs Vencidos/A Vencer"])
+
+# Check de integridade estrutural das planilhas principais
+if df_base_completa.empty:
+    st.error("❌ Erro de comunicação com os servidores do Google Sheets ou nenhuma resposta registrada.")
+    st.info("Verifique se o compartilhamento das planilhas está configurado como 'Qualquer pessoa com o link'.")
+else:
+
+    # ==============================================================================
+    # VISÃO 1: DASHBOARD ANALÍTICO
+    # ==============================================================================
+    if menu == "📊 Dashboard de Gestão":
+        st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
         
-    if df_base_completa.empty:
-        st.warning("⚠️ Planilha de respostas vazia ou inacessível no momento.")
-    else:
-        # Conversão exata para fazer o cruzamento com o Dataframe do Pandas
+        st.markdown("### 📅 Filtros de Período Temporal")
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            data_ini_dash = st.date_input("De:", datetime.now().date() - timedelta(days=90))
+        with col_d2:
+            data_fim_dash = st.date_input("Até:", datetime.now().date())
+            
+        # Converte os controles temporais em Timestamps para compatibilidade indexada
         dt_i = pd.to_datetime(data_ini_dash)
         dt_f = pd.to_datetime(data_fim_dash)
         
@@ -162,7 +162,7 @@ if menu == "📊 Dashboard de Gestão":
             (df_base_completa['Data Entrega'] <= dt_f)
         ]
         
-        # Cards de Indicadores Operacionais superiores
+        # Blocos de Indicadores de Cartão (Métricas superiores)
         total_entregue = df_dash['Qtd'].sum() if not df_dash.empty else 0
         pendentes_qtd = len(df_dash[df_dash['Assinatura'] == "Pendente"]) if not df_dash.empty else 0
         vencidos_qtd = len(df_dash[df_dash['Status'] == "🔴 VENCIDO"]) if not df_dash.empty else 0
@@ -177,44 +177,41 @@ if menu == "📊 Dashboard de Gestão":
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
-            st.markdown("#### Volumetria de Consumo por Setor")
+            st.markdown("#### Volumetria de Consumo por Setor / Unidade")
             if not df_dash.empty:
                 df_setor = df_dash.groupby('Departamento')['Qtd'].sum().reset_index()
                 st.bar_chart(data=df_setor, x='Departamento', y='Qtd', use_container_width=True)
             else:
-                st.info("Nenhum dado lançado neste período.")
+                st.info("Nenhuma movimentação identificada neste intervalo.")
                 
         with col_g2:
             st.markdown("#### Distribuição de Consumo por Modelo de EPI")
             if not df_dash.empty:
-                # Groupby estruturado explicitamente com a coluna 'EPI' mapeada
+                # Groupby corrigido e validado explicitamente com a coluna estruturada 'EPI'
                 df_ranking = df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False)
                 st.bar_chart(data=df_ranking, x='EPI', y='Qtd', use_container_width=True)
             else:
-                st.info("Nenhum dado lançado neste período.")
+                st.info("Nenhuma movimentação identificada neste intervalo.")
 
-# ==============================================================================
-# PAINEL 2: GESTÃO DE VALIDADES E PENDÊNCIAS LOGÍSTICAS
-# ==============================================================================
-elif menu == "⚠️ EPIs Vencidos/A Vencer":
-    st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
-    
-    if df_base_completa.empty:
-        st.warning("Nenhum registro encontrado para listar alertas.")
-    else:
+    # ==============================================================================
+    # VISÃO 2: GERENCIAMENTO DE LOGÍSTICA E PRAZOS
+    # ==============================================================================
+    elif menu == "⚠️ EPIs Vencidos/A Vencer":
+        st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
+        
         aba_validade, aba_assinaturas = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
         
-        # --- ABA 1: MONITOR DE VALIDADE ---
+        # --- ABA 1: TABELA DE GERENCIAMENTO DE VALIDADE ---
         with aba_validade:
-            st.markdown("### 🔍 Controle de Validade Geral")
+            st.markdown("### 🔍 Visão Ampla de Validade")
             df_exibicao_val = df_base_completa.copy()
             df_exibicao_val['Data Entrega'] = df_exibicao_val['Data Entrega'].dt.strftime('%d/%m/%Y')
             df_exibicao_val['Data Vencimento'] = df_exibicao_val['Data Vencimento'].dt.strftime('%d/%m/%Y')
             st.dataframe(df_exibicao_val.sort_values(by="Dias Restantes"), use_container_width=True)
             
-        # --- ABA 2: ASSINATURAS PENDENTES (Filtro Dinâmico) ---
+        # --- ABA 2: MONITORAMENTO DE ASSINATURAS PENDENTES ---
         with aba_assinaturas:
-            st.markdown("### 🔍 Filtros Manuais de Cobrança")
+            st.markdown("### 🔍 Triagem Avançada de Pendências")
             col_f1, col_f2, col_f3 = st.columns(3)
             
             with col_f1:
@@ -222,14 +219,15 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                 depto_sel = st.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
                 
             with col_f2:
-                data_ini_p = st.date_input("Data Inicial:", datetime.now().date() - timedelta(days=60), key="ini_p")
+                data_ini_p = st.date_input("Início Período:", datetime.now().date() - timedelta(days=60), key="ini_p")
             with col_f3:
-                data_fim_p = st.date_input("Data Final:", datetime.now().date() + timedelta(days=1), key="fim_p")
+                data_fim_p = st.date_input("Fim Período:", datetime.now().date() + timedelta(days=1), key="fim_p")
                 
-            # Tratamento de Timestamps idênticos para evitar o erro de cruzamento do Pandas
+            # Equalização dos seletores temporais com a tipagem do Pandas
             dt_i_p = pd.to_datetime(data_ini_p)
             dt_f_p = pd.to_datetime(data_fim_p)
             
+            # Executa o filtro unificado sem travar ou omitir dados antigos
             df_pendentes = df_base_completa[
                 (df_base_completa['Assinatura'] == "Pendente") & 
                 (df_base_completa['Departamento'].isin(depto_sel)) &
@@ -237,13 +235,13 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                 (df_base_completa['Data Entrega'] <= dt_f_p)
             ]
             
-            st.markdown(f"📋 **Pendências Filtradas:** {len(df_pendentes)} itens encontrados.")
+            st.markdown(f"📋 **Pendências Ativas:** {len(df_pendentes)} registros identificados.")
             
             if df_pendentes.empty:
-                st.success("🎉 Excelente! Nenhuma assinatura pendente encontrada com os filtros selecionados.")
+                st.success("🎉 Excelente! Nenhuma assinatura pendente no sistema com os filtros atuais.")
             else:
                 df_exibicao_p = df_pendentes.copy()
-                df_exibicao_p['Data Entrega'] = df_exibicao_p['Data Exhibição'].dt.strftime('%d/%m/%Y') if 'Data Exhibição' in df_exibicao_p else df_exibicao_p['Data Entrega'].dt.strftime('%d/%m/%Y')
+                df_exibicao_p['Data Entrega'] = df_exibicao_p['Data Entrega'].dt.strftime('%d/%m/%Y')
                 st.dataframe(
                     df_exibicao_p[["RE", "Funcionário", "Departamento", "EPI", "Qtd", "Data Entrega", "Status"]],
                     use_container_width=True
