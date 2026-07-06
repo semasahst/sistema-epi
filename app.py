@@ -301,7 +301,7 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                                         st.write(f"❌ Erro ao enviar: {ex}")
 
 # ==============================================================================
-# MENU 4: GERAR FICHA DE EPI (CORRIGIDO PARA FIXAR O 'NAN' NA DATA)
+# MENU 4: GERAR FICHA DE EPI (REPARO DEFINITIVO DA COLUNA DE DATA)
 # ==============================================================================
 elif menu == "📄 Gerar Ficha de EPI":
     st.header("📄 Módulo de Emissão de Ficha de EPI Digital - NR-6")
@@ -336,12 +336,17 @@ elif menu == "📄 Gerar Ficha de EPI":
                     df_filtrado_func['CA'] = df_filtrado_func['EPI'].map(dicionario_ca).fillna("N/A")
                     df_filtrado_func['Quantidade'] = df_filtrado_func['Quantidade'].fillna("1")
                     
-                    # CORREÇÃO DA DATA: Converte para data real e depois formata para texto bonito (DD/MM/AAAA)
+                    # 🛠️ CORREÇÃO OPERACIONAL DA DATA:
+                    # Forçamos a conversão direta removendo qualquer espaço e tratando o formato padrão do Sheets (AAAA-MM-DD ou DD/MM/AAAA)
                     df_filtrado_func['Data_Formatada'] = pd.to_datetime(df_filtrado_func['Data_Entrega'], errors='coerce')
-                    df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].dt.strftime('%d/%m/%Y').fillna(df_filtrado_func['Data_Entrega'].astype(str))
-                    df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].replace('nan', 'Não Informada')
                     
-                    # Exibe na tela do sistema
+                    # Se a conversão falhar (gerar NaT), tentamos ler como texto cru limpo antes de desistir
+                    df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].dt.strftime('%d/%m/%Y').fillna(df_filtrado_func['Data_Entrega'].astype(str).str.strip())
+                    
+                    # Remove terminologias nulas do Pandas/Numpy antes de injetar no ReportLab
+                    df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].replace(['nan', 'NaT', '<NA>'], 'Não Consta')
+                    
+                    # Exibe a tabela tratada na tela do Streamlit
                     st.dataframe(df_filtrado_func[['Data_Formatada', 'EPI', 'CA', 'Quantidade']].rename(columns={'Data_Formatada': 'Data Entrega'}), use_container_width=True, hide_index=True)
                     
                     # Estruturação e Construção do PDF (ReportLab)
@@ -372,8 +377,9 @@ elif menu == "📄 Gerar Ficha de EPI":
                     
                     dados_tabela = [[Paragraph("Data Entrega", estilo_tabela_header), Paragraph("Equipamento (EPI)", estilo_tabela_header), Paragraph("CA do Ministério", estilo_tabela_header), Paragraph("Quantidade", estilo_tabela_header)]]
                     for _, r in df_filtrado_func.iterrows():
-                        # AQUI: Usando a Data_Formatada para evitar que o 'nan' seja impresso no PDF
-                        dados_tabela.append([Paragraph(str(r['Data_Formatada']), estilo_tabela), Paragraph(str(r['EPI']), estilo_tabela), Paragraph(str(r['CA']), estilo_tabela), Paragraph(str(r['Quantidade']), estilo_tabela)])
+                        # Substituição cirúrgica: garantindo string tratada sem risco de 'nan'
+                        data_linha = str(r['Data_Formatada']).strip()
+                        dados_tabela.append([Paragraph(data_linha, estilo_tabela), Paragraph(str(r['EPI']), estilo_tabela), Paragraph(str(r['CA']), estilo_tabela), Paragraph(str(r['Quantidade']), estilo_tabela)])
                         
                     tabela_pdf = Table(dados_tabela, colWidths=[90, 240, 110, 80])
                     tabela_pdf.setStyle(TableStyle([
@@ -393,7 +399,7 @@ elif menu == "📄 Gerar Ficha de EPI":
                     pdf_pronto = buffer.getvalue()
                     buffer.close()
                     
-                    st.download_button(label="🖨️ EXPORTAR FICHA DIGITAL AUDITADA (PDF)", data=pdf_pronto, file_name=f"Ficha_EPI_RE_{re_busca}_NFC.pdf", mime="application/pdf", type="primary")
+                    st.download_button(label="🖨️ EXPORTAR FICHA DIGITAL AUDITADA (PDF)", data=pdf_pronto, file_name=f"Ficha_EPI_RE_{re_busca}_NFC.pdf", mime="application/pdf", type="primary")_RE_{re_busca}_NFC.pdf", mime="application/pdf", type="primary")
 # ==============================================================================
 # MENU 5: VISUALIZAR TABELAS REAIS
 # ==============================================================================
