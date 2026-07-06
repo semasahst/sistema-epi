@@ -132,7 +132,8 @@ def processar_dados_alertas():
 # ==============================================================================
 # MENU 1: DASHBOARD DE INDICADORES (ESTRUTURA BLINDADA CONTRA ERRO DE SINTAXE)
 # ==============================================================================
-elif menu == "Dashboard":
+
+if menu == "Dashboard":
     st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
     
     # 1. Filtros Globais de Tempo e Escopo do Dashboard
