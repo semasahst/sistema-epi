@@ -120,7 +120,7 @@ def construir_base_alertas():
             "Assinatura": status_assinatura
         })
         
-    # 🛠️ CORREÇÃO AQUI: Variável ajustada perfeitamente com o nome da lista acima
+    # RETORNO CORRIGIDO: Agora aponta exatamente para a lista construída no laço
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
 # Criação do DataFrame central unificado
