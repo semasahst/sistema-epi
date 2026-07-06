@@ -1,28 +1,20 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import os
 
 # Configuração global da página do Streamlit (Deve ser a primeira instrução)
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
 # ==============================================================================
-# ENDEREÇOS DAS FONTES DE DADOS (VEJA OS PASSOS ABAIXO SE CONTINUAR SEM CONEXÃO)
+# CARREGAMENTO DOS DADOS OPERACIONAIS LOCAIS (IMUNE A ERROS DE PERMISSÃO)
 # ==============================================================================
-URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=339151256"
-URL_FUNCIONARIOS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=1116669931"
-URL_EPIS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=754637684"
-
-# Modo de depuração para entender o vínculo com o Google
-erro_detalhado = None
-
-# ==============================================================================
-# CARREGAMENTO DOS DADOS OPERACIONAIS COM SISTEMA DE TRATAMENTO DE ERROS
-# ==============================================================================
-@st.cache_data(ttl=5) # Reduzido temporariamente para testes rápidos
+@st.cache_data(ttl=5)
 def buscar_dados_planilhas():
     try:
-        df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
-        df_e = pd.read_csv(URL_EPIS, dtype=str).dropna(how='all')
+        # Lendo os arquivos locais salvos na mesma pasta do app.py
+        df_f = pd.read_csv("funcionarios.csv", dtype=str).dropna(how='all')
+        df_e = pd.read_csv("epis.csv", dtype=str).dropna(how='all')
         return df_f, df_e
     except Exception as e:
         return pd.DataFrame(), pd.DataFrame()
@@ -33,15 +25,17 @@ df_func, df_epis = buscar_dados_planilhas()
 # ENGENHARIA DE DADOS MASTER: TRATAMENTO ROBUSTO DE ALERTAS E PENDÊNCIAS
 # ==============================================================================
 def construir_base_alertas():
-    global erro_detalhado
+    if not os.path.exists("respostas.csv"):
+        st.warning("⚠️ O arquivo 'respostas.csv' não foi encontrado na pasta do projeto.")
+        return pd.DataFrame()
+        
     try:
-        df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
+        df_hist = pd.read_csv("respostas.csv", dtype=str).dropna(how='all')
     except Exception as e:
-        erro_detalhado = f"Erro ao tentar acessar a URL do Google: {str(e)}"
+        st.error(f"Erro ao ler o arquivo local 'respostas.csv': {str(e)}")
         return pd.DataFrame()
         
     if df_hist.empty:
-        erro_detalhado = "A planilha foi acessada, mas retornou totalmente vazia."
         return pd.DataFrame()
         
     # Identificação estrutural baseada estritamente nas posições das colunas
@@ -138,15 +132,7 @@ st.sidebar.markdown("## 🧭 Navegação Sistema")
 menu = st.sidebar.selectbox("Escolha a Visão:", ["📊 Dashboard de Gestão", "⚠️ EPIs Vencidos/A Vencer"])
 
 if df_base_completa.empty:
-    st.error("❌ Erro de comunicação com os servidores do Google Sheets ou nenhuma resposta registrada.")
-    
-    # Exibe o diagnóstico real do que está acontecendo por trás dos panos
-    if erro_detalhado:
-        st.warning(f"🕵️ Diagnóstico Técnico: {erro_detalhado}")
-    else:
-        st.info("Nota: O arquivo foi baixado, mas os cabeçalhos de coluna de respostas não coincidem.")
-        
-    st.info("Verifique se o compartilhamento da planilha foi alterado ou modificado recentemente no Google Drive.")
+    st.info("Aguardando a inclusão das tabelas locais corrigidas (.csv) na pasta do script.")
 else:
 
     # ==============================================================================
@@ -224,10 +210,10 @@ else:
             with col_f2:
                 data_ini_p = st.date_input("Início Período:", datetime.now().date() - timedelta(days=60), key="ini_p")
             with col_f3:
-                data_fim_p = st.date_input("Fim Período:", datetime.now().date() + timedelta(days=1), key="fim_p")
+                st.date_input("Fim Período:", datetime.now().date() + timedelta(days=1), key="fim_p")
                 
             dt_i_p = pd.to_datetime(data_ini_p)
-            dt_f_p = pd.to_datetime(data_fim_p)
+            dt_f_p = pd.to_datetime(st.session_state.fim_p) if "fim_p" in st.session_state else pd.to_datetime(datetime.now().date())
             
             df_pendentes = df_base_completa[
                 (df_base_completa['Assinatura'] == "Pendente") & 
