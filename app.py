@@ -232,8 +232,36 @@ elif menu == "Lançar Entrega":
                         "entry.1336399804": data_entrega.strftime('%Y-%m-%d'),
                         "entry.342195985": str(qtd_entrega)
                     }
-                    requests.post(URL_FORM_POST, data=dados_formulario)
-            st.success("🎯 Registro concluído!")
+# ... (dentro do botão de enviar o lançamento)
+        
+        # 1. Captura a data selecionada no formulário do Streamlit
+        data_string_base = data_entrega.strftime('%Y-%m-%d')
+        
+        # 2. SE a caixinha "Funcionário Ausente / Entrega Indireta" estiver marcada,
+        # nós injetamos a palavra PENDENTE para que o painel saiba disso depois.
+        if st.session_state.get('funcionario_ausente', False): # Ajuste o nome da sua variável se for diferente
+            data_final_envio = f"{data_string_base} - PENDENTE"
+        else:
+            data_final_envio = data_string_base
+
+        # 3. Monta o dicionário com as entries do seu Google Forms
+        dados_formulario = {
+            "entry.123456789": re_input,       # Substitua pelos números reais das suas entries
+            "entry.987654321": nome_funcionario,
+            "entry.111222333": epi_selecionado,
+            "entry.444555666": data_final_envio, # <--- Aqui vai a data tratada (limpa ou com o "PENDENTE")
+            "entry.777888999": qtd_input
+        }
+        
+        # 4. Envia para a planilha
+        try:
+            resposta = requests.post(URL_FORM_POST, data=dados_formulario)
+            if resposta.status_code == 200:
+                st.success("✅ Entrega registrada com sucesso!")
+            else:
+                st.error("❌ Falha ao salvar no banco de dados do Google.")
+        except Exception as e:
+            st.error(f"❌ Erro de conexão: {e}")
             st.balloons()
 
 # ==============================================================================
