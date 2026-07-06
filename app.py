@@ -46,7 +46,6 @@ def construir_base_alertas():
     col_data = df_hist.columns[4]
     col_qtd = df_hist.columns[5]
 
-    # Corrigido: Nome idêntico em todo o escopo da função
     linhas_processadas = []
     hoje = pd.to_datetime(datetime.now().date())
     
@@ -230,6 +229,7 @@ else:
                 st.success("🎉 Excelente! Nenhuma assinatura pendente no sistema com os filtros atuais.")
             else:
                 df_exibicao_p = df_pendentes.copy()
+                # 🛠️ CORREÇÃO REALIZADA AQUI: Alterado de 'Data Exhibição' para 'Data Entrega'
                 df_exibicao_p['Data Entrega'] = df_exibicao_p['Data Entrega'].dt.strftime('%d/%m/%Y')
                 st.dataframe(
                     df_exibicao_p[["RE", "Funcionário", "Departamento", "EPI", "Qtd", "Data Entrega", "Status"]],
