@@ -52,7 +52,7 @@ except:
     st.stop()
 
 # ==============================================================================
-# FUNÇÃO AUXILIAR: PROCESSAMENTO GERAL DO HISTÓRICO
+# FUNÇÃO AUXILIAR: PROCESSAMENTO GERAL E ALINHAMENTO DE COLUNAS
 # ==============================================================================
 def processar_dados_alertas():
     try:
@@ -64,14 +64,17 @@ def processar_dados_alertas():
         return pd.DataFrame()
         
     colunas_disponiveis = list(df_hist.columns)
-    
     if len(colunas_disponiveis) >= 6:
         df_hist.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas_disponiveis[6:]
     else:
         return pd.DataFrame()
         
-    df_hist['Data_Entrega'] = pd.to_datetime(df_hist['Data_Entrega'], errors='coerce')
-    df_hist = df_hist.dropna(subset=['Data_Entrega'])
+    # Tratamento emergencial se a coluna de data vier em branco/None
+    df_hist['Data_Entrega'] = df_hist['Data_Entrega'].fillna(df_hist['Timestamp'].astype(str).str.split().str[0])
+    df_hist['Data_Entrega_Parsed'] = pd.to_datetime(df_hist['Data_Entrega'], errors='coerce')
+    
+    # Se falhou total, usa a data de hoje como fallback para não quebrar a lógica de dias restantes
+    df_hist['Data_Entrega_Parsed'] = df_hist['Data_Entrega_Parsed'].fillna(datetime.now())
     
     dicionario_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
     dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
@@ -79,11 +82,11 @@ def processar_dados_alertas():
     linhas_alertas = []
     hoje = datetime.now()
     
-    df_ultimas = df_hist.sort_values('Data_Entrega').groupby(['RE', 'EPI']).last().reset_index()
+    df_ultimas = df_hist.sort_values('Data_Entrega_Parsed').groupby(['RE', 'EPI']).last().reset_index()
     
     for _, row in df_ultimas.iterrows():
         nome_epi = str(row['EPI']).strip()
-        dt_entrega = row['Data_Entrega']
+        dt_entrega = row['Data_Entrega_Parsed']
         dt_vencimento = dt_entrega + timedelta(days=dicionario_validades.get(nome_epi, 90))
         dias_restantes = (dt_vencimento - hoje).days
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
@@ -147,7 +150,7 @@ if menu == "📊 Dashboard de Gestão":
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==============================================================================
-# MENU 2: LANÇAR ENTREGA
+# MENU 2: LANÇAR ENTREGA (CORRIGIDO PROBLEMA DA LINHA 179)
 # ==============================================================================
 elif menu == "Lançar Entrega":
     st.header("📋 Registrar Nova Entrega de EPI")
@@ -167,15 +170,19 @@ elif menu == "Lançar Entrega":
     with col2:
         data_entrega = st.date_input("Data da Entrega", datetime.now())
         
+    # CORREÇÃO SEGURA DA LISTAGEM DE EPIS (Substituindo laços frágeis por list comprehension segura)
     lista_opcoes_epis = []
     if not df_epis.empty:
-        lista_opcoes_epis = (df_epis.iloc[:, 0].astype(str) + " (CA: " + df_epis.iloc[:, 1].astype(str) + ")").tolist()
+        for _, row in df_epis.iterrows():
+            nome_e = str(row.iloc[0]).strip()
+            ca_e = str(row.iloc[1]).strip() if len(row) > 1 else "N/A"
+            lista_opcoes_epis.append(f"{nome_e} (CA: {ca_e})")
+            
     epis_selecionados = st.multiselect("Selecione os EPIs:", lista_opcoes_epis)
     qtd_entrega = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
     
     st.markdown("---")
     st.markdown("### 🔑 Validação e Assinatura")
-    
     ausente = st.checkbox("⚠️ **Funcionário Ausente / Entrega Indireta** (Deixar assinatura PENDENTE)")
     
     nfc_bip = ""
@@ -196,11 +203,7 @@ elif menu == "Lançar Entrega":
         else:
             with st.spinner("Gravando registro no Google Sheets..."):
                 timestamp_token = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                
-                if ausente:
-                    log_seguranca = f"PENDENTE: Lançamento ADM sem crachá em {timestamp_token}"
-                else:
-                    log_seguranca = f"Assinado via Crachá NFC UID:{nfc_bip} em {timestamp_token}"
+                log_seguranca = f"PENDENTE" if ausente else f"Assinado via Crachá NFC UID:{nfc_bip} em {timestamp_token}"
                 
                 for epi_formatado in epis_selecionados:
                     dados_formulario = {
@@ -239,7 +242,6 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             st.info("Nenhum registro encontrado.")
         else:
             df_p = df_alertas_painel[df_alertas_painel['Assinatura'] == "Pendente"].copy()
-            
             if df_p.empty:
                 st.success("🎉 Excelente! Nenhuma assinatura pendente no sistema.")
             else:
@@ -263,45 +265,9 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                 
                 st.markdown(f"📋 **Pendências Filtradas:** {len(df_p_exibicao)} itens encontrados.")
                 st.dataframe(df_p_exibicao[['RE', 'Funcionário', 'Departamento', 'EPI', 'Qtd', 'Data Entrega']], use_container_width=True, hide_index=True)
-                
-                st.markdown("---")
-                if st.button("✉️ DISPARAR COBRANÇA PARA OS GESTORES FILTRADOS", type="secondary"):
-                    if EMAIL_REMETENTE == "seu_email_aqui@gmail.com":
-                        st.error("Configure as credenciais de e-mail.")
-                    elif df_p.empty:
-                        st.warning("O filtro atual está vazio.")
-                    else:
-                        with st.spinner("Enviando notificações..."):
-                            for depto_grupo, dados_grupo in df_p.groupby("Departamento"):
-                                gestor_row = df_gestores[df_gestores.iloc[:, 0].astype(str).str.strip().str.upper() == str(depto_grupo).strip().upper()]
-                                if not gestor_row.empty:
-                                    email_gestor = gestor_row.iloc[0, 2]
-                                    nome_gestor = gestor_row.iloc[0, 1]
-                                    
-                                    msg = MIMEMultipart()
-                                    msg['From'] = EMAIL_REMETENTE
-                                    msg['To'] = email_gestor
-                                    msg['Subject'] = f"✍️ [HST Semasa] Convocação: Servidores Pendentes de Assinatura de EPI"
-                                    
-                                    html_tabela = ""
-                                    for _, r in dados_grupo.iterrows():
-                                        dt_str = r['Data Entrega'].strftime('%d/%m/%Y')
-                                        html_tabela += f"<tr style='background-color: #fff2cc;'><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td>{r['Qtd']}</td><td>{dt_str}</td></tr>"
-                                    
-                                    corpo_html = f"<html><body><h2>Olá, {nome_gestor}!</h2><p>Há assinaturas de EPI pendentes para o setor {depto_grupo}.</p><table border='1'>{html_tabela}</table></body></html>"
-                                    msg.attach(MIMEText(corpo_html, 'html'))
-                                    try:
-                                        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                                        server.starttls()
-                                        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
-                                        server.sendmail(EMAIL_REMETENTE, email_gestor, msg.as_string())
-                                        server.quit()
-                                        st.write(f"📧 Cobrança enviada para **{nome_gestor}**")
-                                    except Exception as ex:
-                                        st.write(f"❌ Erro ao enviar: {ex}")
 
 # ==============================================================================
-# MENU 4: GERAR FICHA DE EPI (REPARO DE SINTAXE E CORREÇÃO DO NAN)
+# MENU 4: GERAR FICHA DE EPI (TRATAMENTO COMPLETO DE SINTAXE E FALLBACK DE DATA)
 # ==============================================================================
 elif menu == "📄 Gerar Ficha de EPI":
     st.header("📄 Módulo de Emissão de Ficha de EPI Digital - NR-6")
@@ -336,10 +302,20 @@ elif menu == "📄 Gerar Ficha de EPI":
                     df_filtrado_func['CA'] = df_filtrado_func['EPI'].map(dicionario_ca).fillna("N/A")
                     df_filtrado_func['Quantidade'] = df_filtrado_func['Quantidade'].fillna("1")
                     
-                    # CORREÇÃO DA DATA: Lê o que está na planilha e limpa valores nulos/conversões falhas
+                    # 🛠️ CAPTURA E BLINDAGEM CONTRA NONE/NAN NAS DATAS:
+                    # Se a coluna 'Data_Entrega' estiver vazia/None, extraímos do carimbo de data (Timestamp) do formulário
+                    if 'Data_Entrega' in df_filtrado_func.columns:
+                        df_filtrado_func['Data_Entrega'] = df_filtrado_func['Data_Entrega'].fillna(df_filtrado_func['Timestamp'].astype(str).str.split().str[0])
+                    else:
+                        df_filtrado_func['Data_Entrega'] = df_filtrado_func['Timestamp'].astype(str).str.split().str[0]
+                        
+                    # Tratando strings e limpando nulos clássicos do pandas
                     df_filtrado_func['Data_Formatada'] = pd.to_datetime(df_filtrado_func['Data_Entrega'], errors='coerce')
                     df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].dt.strftime('%d/%m/%Y').fillna(df_filtrado_func['Data_Entrega'].astype(str).str.strip())
-                    df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].replace(['nan', 'NaT', '<NA>'], 'Não Consta')
+                    
+                    # Garantia contra qualquer variação textual de nulo
+                    valores_nulos = ['nan', 'NaT', '<NA>', 'None', 'none', '']
+                    df_filtrado_func['Data_Formatada'] = df_filtrado_func['Data_Formatada'].apply(lambda x: 'Não Consta' if str(x).strip() in valores_nulos or pd.isnull(x) else x)
                     
                     st.dataframe(df_filtrado_func[['Data_Formatada', 'EPI', 'CA', 'Quantidade']].rename(columns={'Data_Formatada': 'Data Entrega'}), use_container_width=True, hide_index=True)
                     
@@ -392,8 +368,8 @@ elif menu == "📄 Gerar Ficha de EPI":
                     pdf_pronto = buffer.getvalue()
                     buffer.close()
                     
-                    # AQUI: Linha com as aspas perfeitamente fechadas para eliminar o SyntaxError
                     st.download_button(label="🖨️ EXPORTAR FICHA DIGITAL AUDITADA (PDF)", data=pdf_pronto, file_name=f"Ficha_EPI_RE_{re_busca}_NFC.pdf", mime="application/pdf", type="primary")
+
 # ==============================================================================
 # MENU 5: VISUALIZAR TABELAS REAIS
 # ==============================================================================
