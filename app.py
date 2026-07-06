@@ -91,16 +91,18 @@ def processar_dados_alertas():
         if not re_val or re_val == 'nan' or re_val == '':
             continue
 
-        # 🛠️ NOVA CAPTURA ANTECIPADA DE ASSINATURA PENDENTE:
-        # Verifica se o texto "PENDENTE" existe em qualquer um dos campos antes de limpar a data
-        if "PENDENTE" in raw_timestamp.upper() or "PENDENTE" in raw_data_entrega.upper():
+        # 🛠️ TRATAMENTO ROBUSTO PARA PLANILHA GOOGLE SHEETS COM TEXTO MESCLADO:
+        # Forçamos a conversão para maiúsculo para cobrir "Pendente", "PENDENTE" ou "2026-07-06 - PENDENTE"
+        checar_valores = (raw_timestamp + " " + raw_data_entrega + " " + qtd_val).upper()
+        
+        if "PENDENTE" in checar_valores:
             status_assinatura = "Pendente"
-            # Limpa o texto "- PENDENTE" da data para não quebrar o conversor do Pandas
-            raw_data_entrega = raw_data_entrega.upper().replace("- PENDENTE", "").strip()
+            # Limpa qualquer resíduo de texto do campo de data para não quebrar o conversor
+            raw_data_entrega = raw_data_entrega.upper().replace("- PENDENTE", "").replace("PENDENTE", "").strip()
         else:
             status_assinatura = "Assinado"
             
-        # Converte a data de entrega após a limpeza do texto de contingência
+        # Converte a data de entrega com segurança
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
@@ -113,21 +115,32 @@ def processar_dados_alertas():
         
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Localiza o Departamento do servidor
+        # 🛠️ COMPATIBILIDADE DE DEPARTAMENTO BLINDADA (Ignora formatação de RE numérico/texto)
         depto = "Não Informado"
         if not df_func.empty:
-            f_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == re_val]
+            # Remove pontos ou decimais indesejados (ex: "8552.0" vira "8552")
+            re_limpo_busca = re_val.split('.')[0].strip()
+            
+            # Procura de forma flexível convertendo ambas as pontas para string limpa
+            f_match = df_func[df_func.iloc[:, 0].astype(str).str.split('.').str[0].str.strip() == re_limpo_busca]
             if not f_match.empty: 
                 depto = str(f_match.iloc[0, 2]).strip()
         
         # Garante o tratamento de quantidades mesmo se o campo estiver nulo ou vazio na planilha
-        qtd_salva = int(qtd_val) if qtd_val.isdigit() else 1
+        qtd_salva = int(float(qtd_val)) if (qtd_val.replace('.','',1).isdigit() and qtd_val != 'nan') else 1
         
         linhas_alertas.append({
-            "RE": re_val, "Funcionário": nome_func, "Departamento": depto,
-            "EPI": nome_epi, "CA": dicionario_ca.get(nome_epi, "N/A"), "Qtd": qtd_salva,
-            "Data Entrega": dt_entrega_parsed, "Data Vencimento": dt_vencimento,
-            "Dias Restantes": dias_restantes, "Status": status, "Assinatura": status_assinatura
+            "RE": re_val.split('.')[0].strip(), # Padroniza exibição do RE limpo
+            "Funcionário": nome_func, 
+            "Departamento": depto,
+            "EPI": nome_epi, 
+            "CA": dicionario_ca.get(nome_epi, "N/A"), 
+            "Qtd": qtd_salva,
+            "Data Entrega": dt_entrega_parsed, 
+            "Data Vencimento": dt_vencimento,
+            "Dias Restantes": dias_restantes, 
+            "Status": status, 
+            "Assinatura": status_assinatura
         })
         
     return pd.DataFrame(linhas_alertas)
