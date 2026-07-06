@@ -235,21 +235,23 @@ with aba_pendentes:
                     lista_deptos_p = sorted(list(df_p['Departamento'].unique()))
                     filtro_depto_p = st.multiselect("Filtrar por Departamento:", lista_deptos_p)
                 with col_f2:
-                    # Define a data padrão retrocedendo 30 dias
-                    data_inicio = st.date_input("Data Inicial do Lançamento:", datetime.now().date() - timedelta(days=30))
+                    data_inicio_sel = st.date_input("Data Inicial do Lançamento:", datetime.now().date() - timedelta(days=30))
                 with col_f3:
-                    # Define a data final padrão para o dia atual
-                    data_fim = st.date_input("Data Final do Lançamento:", datetime.now().date())
+                    data_fim_sel = st.date_input("Data Final do Lançamento:", datetime.now().date())
                 
-                # Aplica o filtro de departamento se algum for selecionado
+                # Filtro de Departamento
                 if filtro_depto_p:
                     df_p = df_p[df_p['Departamento'].isin(filtro_depto_p)]
                 
-                # 🛠️ CORREÇÃO DA FILTRAGEM TEMPORAL DE HOJE:
-                # Extraímos apenas a parte da data (.dt.date) para casar perfeitamente com os seletores do Streamlit
-                df_p = df_p[(df_p['Data Entrega'].dt.date >= data_inicio) & (df_p['Data Entrega'].dt.date <= data_fim)]
+                # 🛠️ CORREÇÃO DEFINITIVA DO FILTRO DE DATA BR VS. AMERICANO:
+                # Convertemos os seletores do Streamlit em objetos datetime comparáveis para evitar perdas por fuso horário ou milissegundos
+                dt_inicio_timestamp = pd.to_datetime(data_inicio_sel)
+                dt_fim_timestamp = pd.to_datetime(data_fim_sel) + timedelta(days=1) - timedelta(seconds=1) # Estende até 23:59:59 do dia final
                 
-                # Cria a exibição formatando a data exclusivamente visual para o padrão BR
+                # Aplica o filtro de forma segura comparando timestamps reais do Pandas
+                df_p = df_p[(df_p['Data Entrega'] >= dt_inicio_timestamp) & (df_p['Data Entrega'] <= dt_fim_timestamp)]
+                
+                # Estrutura a tabela de visualização formatando apenas as strings de saída
                 df_p_exibicao = df_p.copy()
                 df_p_exibicao['Data Entrega'] = df_p_exibicao['Data Entrega'].dt.strftime('%d/%m/%Y')
                 df_p_exibicao['Data Vencimento'] = df_p_exibicao['Data Vencimento'].dt.strftime('%d/%m/%Y')
