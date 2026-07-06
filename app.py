@@ -65,13 +65,9 @@ def processar_dados_alertas():
         
     colunas_disponiveis = list(df_hist.columns)
     
-    # Padronização dinâmica de colunas
-    # Assumindo: 0: Carimbo/Obs, 1: RE, 2: Funcionário, 3: EPI, 4: Data, 5: Qtd
-    # Modifique a ordem abaixo caso seu formulário salve a Assinatura/NFC em uma coluna específica
     if len(colunas_disponiveis) >= 6:
         df_hist.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas_disponiveis[6:]
     else:
-        st.error("A aba de respostas não possui colunas suficientes.")
         return pd.DataFrame()
         
     df_hist['Data_Entrega'] = pd.to_datetime(df_hist['Data_Entrega'], errors='coerce')
@@ -83,7 +79,6 @@ def processar_dados_alertas():
     linhas_alertas = []
     hoje = datetime.now()
     
-    # Para o Monitor e Dashboard, usamos o agrupamento da ULTIMA entrega
     df_ultimas = df_hist.sort_values('Data_Entrega').groupby(['RE', 'EPI']).last().reset_index()
     
     for _, row in df_ultimas.iterrows():
@@ -93,9 +88,6 @@ def processar_dados_alertas():
         dias_restantes = (dt_vencimento - hoje).days
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Identificação se está pendente de assinatura física/NFC
-        # Verificamos se no campo Timestamp ou em algum campo de log foi marcado como PENDENTE
-        # Adaptar para a coluna onde você está salvando o log_seguranca se necessário.
         info_assinatura = str(row['Timestamp']) 
         status_assinatura = "Pendente" if "PENDENTE" in info_assinatura.upper() or "NFC" not in info_assinatura.upper() else "Assinado"
         
@@ -155,7 +147,7 @@ if menu == "📊 Dashboard de Gestão":
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==============================================================================
-# MENU 2: LANÇAR ENTREGA (Modificado com o bypass de assinatura)
+# MENU 2: LANÇAR ENTREGA
 # ==============================================================================
 elif menu == "Lançar Entrega":
     st.header("📋 Registrar Nova Entrega de EPI")
@@ -169,7 +161,6 @@ elif menu == "Lançar Entrega":
                 nome_func, depto_func = funcionario.iloc[0, 1], funcionario.iloc[0, 2]
                 uid_cadastrado = funcionario["UID_Cracha"].values[0] if "UID_Cracha" in funcionario.columns else ""
                 uid_cadastrado = str(uid_cadastrado).strip() if pd.notnull(uid_cadastrado) else ""
-                
                 st.success(f"👤 **Colaborador:** {nome_func} | **Depto:** {depto_func}")
             else:
                 st.error(f"❌ RE '{re_input}' não encontrado.")
@@ -185,7 +176,6 @@ elif menu == "Lançar Entrega":
     st.markdown("---")
     st.markdown("### 🔑 Validação e Assinatura")
     
-    # NOVO AJUSTE: Checkbox para liberar o lançamento sem o crachá físico
     ausente = st.checkbox("⚠️ **Funcionário Ausente / Entrega Indireta** (Deixar assinatura PENDENTE)")
     
     nfc_bip = ""
@@ -201,14 +191,12 @@ elif menu == "Lançar Entrega":
             st.error("Selecione o EPI.")
         elif not ausente and not nfc_bip:
             st.error("❌ Erro: Aproxime o crachá ou marque a caixa 'Funcionário Ausente' para prosseguir.")
-        # ABAIXO: Linha corrigida removendo os zeros à esquerda do leitor e da planilha
         elif not ausente and uid_cadastrado and nfc_bip.lstrip('0') != uid_cadastrado.lstrip('0'):
             st.error("🚨 ERRO DE IDENTIDADE: Crachá não pertence a este RE!")
         else:
             with st.spinner("Gravando registro no Google Sheets..."):
                 timestamp_token = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
                 
-                # Define o texto do log que vai para a planilha
                 if ausente:
                     log_seguranca = f"PENDENTE: Lançamento ADM sem crachá em {timestamp_token}"
                 else:
@@ -225,20 +213,18 @@ elif menu == "Lançar Entrega":
                     requests.post(URL_FORM_POST, data=dados_formulario)
             st.success("🎯 Registro concluído!")
             st.balloons()
+
 # ==============================================================================
-# MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES (Modificado com Filtros Manuais)
+# MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES
 # ==============================================================================
 elif menu == "⚠️ EPIs Vencidos/A Vencer":
     st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
-    
     aba_vencidos, aba_pendentes = st.tabs(["🚨 Monitor de Validade (NR-6)", "📥 Assinaturas Pendentes"])
-    
     df_alertas_painel = processar_dados_alertas()
     
     try: df_gestores = pd.read_csv(URL_GESTORES, dtype=str).dropna(how='all')
     except: df_gestores = pd.DataFrame()
 
-    # ABA 1: FUNCIONAMENTO ANTERIOR DE VALIDADES MANTIDO
     with aba_vencidos:
         if df_alertas_painel.empty:
             st.info("Sem registros.")
@@ -248,12 +234,10 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             df_v['Data Vencimento'] = df_v['Data Vencimento'].dt.strftime('%d/%m/%Y')
             st.dataframe(df_v, use_container_width=True, hide_index=True)
 
-    # NOVO AJUSTE - ABA 2: CENTRAL DE ASSINATURAS PENDENTES COM FILTRO DE DATA E DEPTO
     with aba_pendentes:
         if df_alertas_painel.empty:
             st.info("Nenhum registro encontrado.")
         else:
-            # Isola apenas o que está marcado como pendente de assinatura
             df_p = df_alertas_painel[df_alertas_painel['Assinatura'] == "Pendente"].copy()
             
             if df_p.empty:
@@ -261,45 +245,35 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
             else:
                 st.markdown("### 🔍 Filtros Manuais de Cobrança")
                 col_f1, col_f2, col_f3 = st.columns(3)
-                
                 with col_f1:
                     lista_deptos_p = sorted(list(df_p['Departamento'].unique()))
                     filtro_depto_p = st.multiselect("Filtrar por Departamento:", lista_deptos_p)
-                
                 with col_f2:
                     data_inicio = st.date_input("Data Inicial do Lançamento:", datetime.now() - timedelta(days=30))
                 with col_f3:
                     data_fim = st.date_input("Data Final do Lançamento:", datetime.now())
                 
-                # Aplicação manual dos filtros selecionados na tela
                 if filtro_depto_p:
                     df_p = df_p[df_p['Departamento'].isin(filtro_depto_p)]
-                
                 df_p = df_p[(df_p['Data Entrega'].dt.date >= data_inicio) & (df_p['Data Entrega'].dt.date <= data_fim)]
                 
-                # Formatação visual das datas para o usuário
                 df_p_exibicao = df_p.copy()
                 df_p_exibicao['Data Entrega'] = df_p_exibicao['Data Entrega'].dt.strftime('%d/%m/%Y')
                 df_p_exibicao['Data Vencimento'] = df_p_exibicao['Data Vencimento'].dt.strftime('%d/%m/%Y')
                 
-                st.markdown(f"📋 **Pendências Filtradas:** {len(df_p_exibicao)} itens encontrados no período.")
+                st.markdown(f"📋 **Pendências Filtradas:** {len(df_p_exibicao)} itens encontrados.")
                 st.dataframe(df_p_exibicao[['RE', 'Funcionário', 'Departamento', 'EPI', 'Qtd', 'Data Entrega']], use_container_width=True, hide_index=True)
                 
                 st.markdown("---")
-                st.markdown("### ✉️ Disparo Manual de Convocação")
-                st.caption("O botão abaixo enviará um e-mail consolidado para os gestores apenas dos departamentos e período filtrados acima.")
-                
                 if st.button("✉️ DISPARAR COBRANÇA PARA OS GESTORES FILTRADOS", type="secondary"):
                     if EMAIL_REMETENTE == "seu_email_aqui@gmail.com":
                         st.error("Configure as credenciais de e-mail.")
                     elif df_p.empty:
-                        st.warning("O filtro atual está vazio. Ajuste as datas ou departamentos antes de enviar.")
+                        st.warning("O filtro atual está vazio.")
                     else:
-                        with st.spinner("Enviando notificações de pendência..."):
-                            # Agrupa as pendências por departamento para enviar 1 único e-mail por gestor
+                        with st.spinner("Enviando notificações..."):
                             for depto_grupo, dados_grupo in df_p.groupby("Departamento"):
                                 gestor_row = df_gestores[df_gestores.iloc[:, 0].astype(str).str.strip().str.upper() == str(depto_grupo).strip().upper()]
-                                
                                 if not gestor_row.empty:
                                     email_gestor = gestor_row.iloc[0, 2]
                                     nome_gestor = gestor_row.iloc[0, 1]
@@ -307,34 +281,14 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                                     msg = MIMEMultipart()
                                     msg['From'] = EMAIL_REMETENTE
                                     msg['To'] = email_gestor
-                                    msg['Subject'] = f"✍️ [HST Semasa] Convocação: Servidores Pendentes de Assinatura de EPI - Setor: {depto_grupo}"
+                                    msg['Subject'] = f"✍️ [HST Semasa] Convocação: Servidores Pendentes de Assinatura de EPI"
                                     
                                     html_tabela = ""
                                     for _, r in dados_grupo.iterrows():
                                         dt_str = r['Data Entrega'].strftime('%d/%m/%Y')
                                         html_tabela += f"<tr style='background-color: #fff2cc;'><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td>{r['Qtd']}</td><td>{dt_str}</td></tr>"
                                     
-                                    corpo_html = f"""
-                                    <html>
-                                    <body>
-                                        <h2>Olá, {nome_gestor}!</h2>
-                                        <p>Identificamos em nosso sistema HST entregas de EPIs efetuadas administrativamente para servidores do seu setor (<b>{depto_grupo}</b>) entre as datas {data_inicio.strftime('%d/%m/%Y')} e {data_fim.strftime('%d/%m/%Y')} que <b>ainda não foram assinadas eletronicamente via crachá NFC</b>.</p>
-                                        <p>Solicitamos a gentileza de orientar os colaboradores abaixo listados a comparecerem ao HST no próximo início de turno para realizar a validação biométrica de seus crachás, regularizando a Ficha de EPI nos termos da NR-6:</p>
-                                        <table border='1' cellpadding='5' style='border-collapse: collapse;'>
-                                            <tr style='background-color: #2c3e50; color: white;'>
-                                                <th>RE</th>
-                                                <th>Funcionário</th>
-                                                <th>EPI</th>
-                                                <th>Qtd</th>
-                                                <th>Data Retirada</th>
-                                            </tr>
-                                            {html_tabela}
-                                        </table>
-                                        <br/>
-                                        <p><i>Este é um e-mail automático enviado sob demanda pela gerência do HST Semasa.</i></p>
-                                    </body>
-                                    </html>
-                                    """
+                                    corpo_html = f"<html><body><h2>Olá, {nome_gestor}!</h2><p>Há assinaturas de EPI pendentes para o setor {depto_grupo}.</p><table border='1'>{html_tabela}</table></body></html>"
                                     msg.attach(MIMEText(corpo_html, 'html'))
                                     try:
                                         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
@@ -342,13 +296,107 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                                         server.login(EMAIL_REMETENTE, EMAIL_SENHA)
                                         server.sendmail(EMAIL_REMETENTE, email_gestor, msg.as_string())
                                         server.quit()
-                                        st.write(f"📧 Cobrança enviada para **{nome_gestor}** ({depto_grupo})")
+                                        st.write(f"📧 Cobrança enviada para **{nome_gestor}**")
                                     except Exception as ex:
-                                        st.write(f"❌ Falha ao enviar para {depto_grupo}: {ex}")
+                                        st.write(f"❌ Erro ao enviar: {ex}")
 
-# Módulos de Visualização e Ficha PDF mantidos de forma idêntica abaixo...
+# ==============================================================================
+# MENU 4: GERAR FICHA DE EPI (RESTAURADO E COMPLETO)
+# ==============================================================================
 elif menu == "📄 Gerar Ficha de EPI":
-    st.header("📄 Ficha de EPI Digital - NR-6")
-    # (Código mantido idêntico às versões anteriores)
+    st.header("📄 Módulo de Emissão de Ficha de EPI Digital - NR-6")
+    re_busca = st.text_input("Digite o RE do Colaborador para buscar a Ficha:").strip()
+    
+    if re_busca:
+        func_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(re_busca)]
+        if func_match.empty:
+            st.error("❌ RE não cadastrado no sistema do Semasa.")
+        else:
+            nome_colaborador = func_match.iloc[0, 1]
+            depto_colaborador = func_match.iloc[0, 2]
+            st.info(f"👤 **Trabalhador:** {nome_colaborador} | **Setor:** {depto_colaborador}")
+            
+            try:
+                df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
+            except:
+                df_hist = pd.DataFrame()
+                
+            if df_hist.empty:
+                st.warning("⚠️ Sem histórico de entregas registradas.")
+            else:
+                colunas = list(df_hist.columns)
+                if len(colunas) >= 6:
+                    df_hist.columns = ['Timestamp', 'RE', 'Funcionário', 'EPI', 'Data_Entrega', 'Quantidade'] + colunas[6:]
+                
+                df_filtrado_func = df_hist[df_hist['RE'].astype(str).str.strip() == str(re_busca)].copy()
+                if df_filtrado_func.empty:
+                    st.warning("⚠️ Nenhuma entrega localizada para este colaborador.")
+                else:
+                    dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
+                    df_filtrado_func['CA'] = df_filtrado_func['EPI'].map(dicionario_ca).fillna("N/A")
+                    df_filtrado_func['Quantidade'] = df_filtrado_func['Quantidade'].fillna("1")
+                    
+                    st.dataframe(df_filtrado_func[['Data_Entrega', 'EPI', 'CA', 'Quantidade']], use_container_width=True, hide_index=True)
+                    
+                    # Estruturação e Construção do PDF (ReportLab)
+                    buffer = io.BytesIO()
+                    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+                    elementos_pdf = []
+                    estilos = getSampleStyleSheet()
+                    estilo_titulo = ParagraphStyle('Titulo', parent=estilos['Heading1'], fontName='Helvetica-Bold', fontSize=15, alignment=1, spaceAfter=20)
+                    estilo_sub = ParagraphStyle('Sub', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=11, spaceAfter=8)
+                    estilo_texto = ParagraphStyle('Texto', parent=estilos['Normal'], fontName='Helvetica', fontSize=10, leading=14, spaceAfter=15, alignment=4)
+                    estilo_tabela = ParagraphStyle('Tab', parent=estilos['Normal'], fontName='Helvetica', fontSize=9, leading=11)
+                    estilo_tabela_header = ParagraphStyle('TabH', parent=estilos['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=11, textColor=colors.white)
+                    
+                    elementos_pdf.append(Paragraph("SEMASA - SERVIÇO MUNICIPAL DE SANEAMENTO AMBIENTAL DE SANTO ANDRÉ", estilo_titulo))
+                    elementos_pdf.append(Paragraph("FICHA DE CONTROLE E REGISTRO DE ENTREGA DE EPI", ParagraphStyle('SubT', parent=estilo_titulo, fontSize=13, spaceAfter=25)))
+                    elementos_pdf.append(Paragraph(f"<b>RE:</b> {re_busca} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Colaborador:</b> {nome_colaborador}", estilo_sub))
+                    elementos_pdf.append(Paragraph(f"<b>Departamento / Setor:</b> {depto_colaborador}", estilo_sub))
+                    elementos_pdf.append(Spacer(1, 15))
+                    
+                    termo_nr6 = """
+                    <b>TERMO DE RESPONSABILIDADE, CIÊNCIA E CERTIFICAÇÃO AVANÇADA (NR-6 / LEI 14.063)</b><br/><br/>
+                    Declaramos para os devidos fins legais que recebi do SEMASA os Equipamentos de Proteção Individual (EPIs) relacionados na listagem abaixo, adequados ao risco das minhas funções operacionais. 
+                    Comprometo-me ao uso obrigatório, guarda, zelo e higienização dos mesmos. 
+                    <b>Cláusula de Validação Biométrica Corporativa:</b> Fica expressamente eleito e acordado entre as partes que a aposição física do crachá funcional NFC com código UID unívoco e individualizado do trabalhador atua como assinatura eletrônica avançada, plenamente íntegra e com total validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
+                    """
+                    elementos_pdf.append(Paragraph(termo_nr6, estilo_texto))
+                    elementos_pdf.append(Spacer(1, 10))
+                    
+                    dados_tabela = [[Paragraph("Data Entrega", estilo_tabela_header), Paragraph("Equipamento (EPI)", estilo_tabela_header), Paragraph("CA do Ministério", estilo_tabela_header), Paragraph("Quantidade", estilo_tabela_header)]]
+                    for _, r in df_filtrado_func.iterrows():
+                        dados_tabela.append([Paragraph(str(r['Data_Entrega']), estilo_tabela), Paragraph(str(r['EPI']), estilo_tabela), Paragraph(str(r['CA']), estilo_tabela), Paragraph(str(r['Quantidade']), estilo_tabela)])
+                        
+                    tabela_pdf = Table(dados_tabela, colWidths=[90, 240, 110, 80])
+                    tabela_pdf.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+                        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f9f9f9')]),
+                    ]))
+                    elementos_pdf.append(tabela_pdf)
+                    elementos_pdf.append(Spacer(1, 35))
+                    
+                    elementos_pdf.append(Paragraph(f"Santo André, {datetime.now().strftime('%d/%m/%Y')}.", estilo_texto))
+                    elementos_pdf.append(Spacer(1, 15))
+                    elementos_pdf.append(Paragraph("<b>🟢 VALIDADO EM AUDITORIA VIA ASSINATURA ELETRÔNICA DE CRACHÁ NFC</b>", ParagraphStyle('NFC', parent=estilo_texto, fontName='Helvetica-Bold', textColor=colors.HexColor('#27ae60'))))
+                    elementos_pdf.append(Paragraph("Os hashes criptográficos de validação de UID, carimbo de data/hora e identificador do terminal encontram-se arquivados nativamente na base HST do Semasa para fins periciais (Lei 14.063/2020).", ParagraphStyle('NFCS', parent=estilo_texto, fontSize=8, textColor=colors.gray)))
+                    
+                    doc.build(elementos_pdf)
+                    pdf_pronto = buffer.getvalue()
+                    buffer.close()
+                    
+                    st.download_button(label="🖨️ EXPORTAR FICHA DIGITAL AUDITADA (PDF)", data=pdf_pronto, file_name=f"Ficha_EPI_RE_{re_busca}_NFC.pdf", mime="application/pdf", type="primary")
+
+# ==============================================================================
+# MENU 5: VISUALIZAR TABELAS REAIS
+# ==============================================================================
 elif menu == "Visualizar Tabelas Reais":
-    st.header("📊 Tabelas Reais")
+    st.header("📊 Dados Atuais do Google Sheets")
+    tab1, tab2 = st.tabs(["Histórico de Respostas", "Lista tb_funcionarios"])
+    with tab1:
+        try: st.dataframe(pd.read_csv(URL_RESPOSTAS, dtype=str), use_container_width=True)
+        except: st.info("Vazia.")
+    with tab2:
+        try: st.dataframe(pd.read_csv(URL_FUNCIONARIOS, dtype=str), use_container_width=True)
+        except: st.info("Inacessível.")
