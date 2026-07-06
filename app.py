@@ -52,7 +52,7 @@ except:
     st.stop()
 
 # ==============================================================================
-# FUNÇÃO AUXILIAR: PROCESSAMENTO DINÂMICO E MAPEAMENTO DAS COLUNAS REAIS
+# FUNÇÃO AUXILIAR: PROCESSAMENTO DINÂMICO DE ALERTAS E VERIFICAÇÃO DE ASSINATURAS
 # ==============================================================================
 def processar_dados_alertas():
     try:
@@ -63,8 +63,7 @@ def processar_dados_alertas():
     if df_hist.empty:
         return pd.DataFrame()
         
-    # Mapeamento dinâmico baseado nos nomes reais que estão na linha 1 da sua planilha (image_e04ebe.png)
-    # Evita quebrar se as colunas mudarem de ordem física
+    # Mapeamento das colunas baseado na planilha real
     col_timestamp = df_hist.columns[0]
     col_re = 'RE' if 'RE' in df_hist.columns else df_hist.columns[1]
     col_func = 'Funcionário' if 'Funcionário' in df_hist.columns else df_hist.columns[2]
@@ -75,12 +74,10 @@ def processar_dados_alertas():
     linhas_alertas = []
     hoje = datetime.now()
     
-    # Dicionários de apoio baseados nas tabelas auxiliares
     dicionario_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
     dicionario_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
     for _, row in df_hist.iterrows():
-        # Captura os dados brutos usando as colunas mapeadas
         re_val = str(row[col_re]).strip()
         nome_func = str(row[col_func]).strip()
         nome_epi = str(row[col_epi]).strip()
@@ -88,37 +85,37 @@ def processar_dados_alertas():
         raw_timestamp = str(row[col_timestamp]).strip()
         raw_data_entrega = str(row[col_data]).strip()
         
-        # 🛠️ CORREÇÃO OPERACIONAL ANTI-DESALINHAMENTO (Trata o bug visível na imagem e04ebe)
-        # Se o sistema detectar que a data foi parar no campo do EPI, ele joga o valor correto de volta
+        # Correção anti-desalinhamento de colunas
         if "-" in nome_epi and len(nome_epi) == 10:
-            # Inversão: o que estava no campo Data vira o EPI, e o que estava no EPI vira a Data
             nome_epi_correto = raw_data_entrega
             raw_data_entrega = nome_epi
             nome_epi = nome_epi_correto
 
-        if not re_val or re_val == 'nan':
+        if not re_val or re_val == 'nan' or re_val == '':
             continue
             
-        # Tratamento seguro da Data de Entrega (aceitando tanto padrão ISO quanto BR)
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
-            # Fallback caso a data esteja em branco: extrai a data do Carimbo de Data/Hora (Timestamp)
             dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = hoje
             
-        # Define os critérios de validade
         dias_validade = dicionario_validades.get(nome_epi, 90)
         dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
         
         status = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Define se está assinado verificando o texto contido no carimbo de data/hora (Timestamp)
-        status_assinatura = "Assinado" if "NFC" in raw_timestamp.upper() or "ASSINADO" in raw_timestamp.upper() else "Pendente"
+        # 🛠️ NOVA LÓGICA DE DETECÇÃO DE PENDÊNCIA:
+        # Só marcamos como "Pendente" se houver a palavra "PENDENTE" explícita gravada no registro, 
+        # caso contrário, o fluxo padrão com crachá (ou preenchimento comum do dia) é considerado Assinado.
+        if "PENDENTE" in raw_timestamp.upper() or "PENDENTE" in raw_data_entrega.upper():
+            status_assinatura = "Pendente"
+        else:
+            status_assinatura = "Assinado"
         
-        # Procura o departamento correspondente ao funcionário
-        depto = "DMO" # Fallback comum do seu setor observado na imagem
+        # Localiza o Departamento do servidor
+        depto = "Não Informado"
         if not df_func.empty:
             f_match = df_func[df_func.iloc[:, 0].astype(str).str.strip() == re_val]
             if not f_match.empty: 
@@ -134,7 +131,6 @@ def processar_dados_alertas():
         })
         
     return pd.DataFrame(linhas_alertas)
-
 # ==============================================================================
 # MENU 1: DASHBOARD DE GESTÃO
 # ==============================================================================
