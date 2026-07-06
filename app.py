@@ -134,21 +134,28 @@ def processar_dados_alertas():
 # ==============================================================================
 # MENU 1: DASHBOARD DE INDICADORES (VERSÃO AVANÇADA COM EXPORTAÇÃO)
 # ==============================================================================
-elif menu == "Dashboard":
+# ==============================================================================
+# BLOCO PRINCIPAL DE NAVEGAÇÃO E TRATAMENTO DE MENUS
+# ==============================================================================
+# Certifique-se de que a variável 'menu' está recebendo o st.sidebar.selectbox corretamente antes disso
+# Exemplo: menu = st.sidebar.selectbox("Navegação", ["Dashboard", "Lançar Entrega", "⚠️ EPIs Vencidos/A Vencer", "📄 Gerar Ficha de EPI"])
+
+if menu == "Dashboard":
     st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
     
     # 1. Filtros Globais de Tempo e Escopo do Dashboard
     st.markdown("### 📅 Filtros de Análise Temporal")
     col_d1, col_d2, col_d3 = st.columns(3)
+    
+    # Executa a função auxiliar de processamento
+    df_base_completa = processar_dados_alertas()
+    
     with col_d1:
         data_ini_dash = st.date_input("Início da Análise:", datetime.now().date() - timedelta(days=90))
     with col_d2:
         data_fim_dash = st.date_input("Fim da Análise:", datetime.now().date())
     with col_d3:
-        # Permite baixar o relatório consolidado do período filtrado para auditoria
-        df_base_completa = processar_dados_alertas()
         if not df_base_completa.empty:
-            # Aplica o filtro de data antes de gerar o CSV para download
             dt_i = pd.to_datetime(data_ini_dash)
             dt_f = pd.to_datetime(data_fim_dash) + timedelta(days=1) - timedelta(seconds=1)
             df_filtrado_periodo = df_base_completa[(df_base_completa['Data Entrega'] >= dt_i) & (df_base_completa['Data Entrega'] <= dt_f)]
@@ -160,7 +167,7 @@ elif menu == "Dashboard":
                 file_name=f"Relatorio_HST_Semasa_{data_ini_dash}_a_{data_fim_dash}.csv",
                 mime="text/csv",
                 type="secondary",
-                help="Clique para baixar todos os registros deste período e usar em Excel ou relatórios."
+                help="Clique para baixar todos os registros deste período."
             )
 
     st.markdown("---")
@@ -172,7 +179,6 @@ elif menu == "Dashboard":
         dt_i = pd.to_datetime(data_ini_dash)
         dt_f = pd.to_datetime(data_fim_dash) + timedelta(days=1) - timedelta(seconds=1)
         
-        # Filtra o dataframe principal baseado nas datas selecionadas
         df_dash = df_base_completa[(df_base_completa['Data Entrega'] >= dt_i) & (df_base_completa['Data Entrega'] <= dt_f)].copy()
 
         if df_dash.empty:
@@ -197,14 +203,12 @@ elif menu == "Dashboard":
 
             st.markdown("---")
 
-            # 4. Gráficos de Distribuição por Departamento (Igual à Primeira Versão, mas Dinâmico)
+            # 4. Gráficos de Distribuição por Departamento
             st.markdown("### 🏢 Análise de Distribuição Gerencial por Setores")
-            
             col_g1, col_g2 = st.columns(2)
             
             with col_g1:
                 st.markdown("##### Total de EPIs Entregues por Departamento")
-                # Agrupa por departamento e soma as quantidades reais entregues
                 df_depto = df_dash.groupby('Departamento')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False)
                 
                 fig_barras = px.bar(
@@ -219,8 +223,7 @@ elif menu == "Dashboard":
                 fig_barras.update_layout(
                     margin=dict(l=20, r=20, t=10, b=20),
                     paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis={'categoryorder':'total descending'}
+                    plot_bgcolor='rgba(0,0,0,0)'
                 )
                 st.plotly_chart(fig_barras, use_container_width=True)
 
@@ -245,11 +248,9 @@ elif menu == "Dashboard":
                     )
                     st.plotly_chart(fig_pizza, use_container_width=True)
 
-            # 5. Dica de Exportação Visual para Apresentações e E-mails
             st.info(
                 "💡 **Dica de Apresentação:** Passe o mouse sobre qualquer um dos gráficos acima e clique na "
-                "câmera fotográfica (**'Download plot as a png'**) na barra flutuante para salvar a imagem do gráfico perfeita, "
-                "pronta para anexar no seu PowerPoint, relatórios ou corpo do e-mail institucional."
+                "câmera fotográfica (**'Download plot as a png'**) para salvar a imagem pronta para apresentações ou e-mails."
             )
 # ==============================================================================
 # MENU 2: LANÇAR ENTREGA (CORRIGIDO E INTEGRADO AO SISTEMA DE PENDÊNCIAS)
