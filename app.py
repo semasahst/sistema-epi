@@ -229,7 +229,6 @@ else:
                 st.success("🎉 Excelente! Nenhuma assinatura pendente no sistema com os filtros atuais.")
             else:
                 df_exibicao_p = df_pendentes.copy()
-                # 🛠️ CORREÇÃO REALIZADA AQUI: Alterado de 'Data Exhibição' para 'Data Entrega'
                 df_exibicao_p['Data Entrega'] = df_exibicao_p['Data Entrega'].dt.strftime('%d/%m/%Y')
                 st.dataframe(
                     df_exibicao_p[["RE", "Funcionário", "Departamento", "EPI", "Qtd", "Data Entrega", "Status"]],
