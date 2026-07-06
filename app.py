@@ -37,10 +37,7 @@ URL_EPIS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx
 URL_RESPOSTAS = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=Respostas%20ao%20formul%C3%A1rio%201"
 URL_GESTORES = f"https://docs.google.com/spreadsheets/d/{CHAVE_PLANILHA}/gviz/tq?tqx=out:csv&sheet=tb_gestores"
 
-menu = st.sidebar.selectbox(
-    "Navegação", 
-    ["📊 Dashboard de Gestão", "Lançar Entrega", "⚠️ EPIs Vencidos/A Vencer", "📄 Gerar Ficha de EPI", "Visualizar Tabelas Reais"]
-)
+menu = st.sidebar.selectbox("Navegação", ["Dashboard", "Lançar Entrega", "⚠️ EPIs Vencidos/A Vencer", "📄 Gerar Ficha de EPI"])
 
 try:
     df_func = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
