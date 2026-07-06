@@ -220,28 +220,12 @@ elif menu == "Lançar Entrega":
 # ==============================================================================
 # MENU 3: CONTROLES - VENCIDOS E ASSINATURAS PENDENTES
 # ==============================================================================
-elif menu == "⚠️ EPIs Vencidos/A Vencer":
-    st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
-    aba_vencidos, aba_pendentes = st.tabs(["🚨 Monitor de Validade (NR-6)", "📥 Assinaturas Pendentes"])
-    df_alertas_painel = processar_dados_alertas()
-    
-    try: df_gestores = pd.read_csv(URL_GESTORES, dtype=str).dropna(how='all')
-    except: df_gestores = pd.DataFrame()
-
-    with aba_vencidos:
-        if df_alertas_painel.empty:
-            st.info("Sem registros.")
-        else:
-            df_v = df_alertas_painel.copy()
-            df_v['Data Entrega'] = df_v['Data Entrega'].dt.strftime('%d/%m/%Y')
-            df_v['Data Vencimento'] = df_v['Data Vencimento'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_v, use_container_width=True, hide_index=True)
-
-    with aba_pendentes:
+with aba_pendentes:
         if df_alertas_painel.empty:
             st.info("Nenhum registro encontrado.")
         else:
             df_p = df_alertas_painel[df_alertas_painel['Assinatura'] == "Pendente"].copy()
+            
             if df_p.empty:
                 st.success("🎉 Excelente! Nenhuma assinatura pendente no sistema.")
             else:
@@ -251,21 +235,63 @@ elif menu == "⚠️ EPIs Vencidos/A Vencer":
                     lista_deptos_p = sorted(list(df_p['Departamento'].unique()))
                     filtro_depto_p = st.multiselect("Filtrar por Departamento:", lista_deptos_p)
                 with col_f2:
-                    data_inicio = st.date_input("Data Inicial do Lançamento:", datetime.now() - timedelta(days=30))
+                    # Define a data padrão retrocedendo 30 dias
+                    data_inicio = st.date_input("Data Inicial do Lançamento:", datetime.now().date() - timedelta(days=30))
                 with col_f3:
-                    data_fim = st.date_input("Data Final do Lançamento:", datetime.now())
+                    # Define a data final padrão para o dia atual
+                    data_fim = st.date_input("Data Final do Lançamento:", datetime.now().date())
                 
+                # Aplica o filtro de departamento se algum for selecionado
                 if filtro_depto_p:
                     df_p = df_p[df_p['Departamento'].isin(filtro_depto_p)]
+                
+                # 🛠️ CORREÇÃO DA FILTRAGEM TEMPORAL DE HOJE:
+                # Extraímos apenas a parte da data (.dt.date) para casar perfeitamente com os seletores do Streamlit
                 df_p = df_p[(df_p['Data Entrega'].dt.date >= data_inicio) & (df_p['Data Entrega'].dt.date <= data_fim)]
                 
+                # Cria a exibição formatando a data exclusivamente visual para o padrão BR
                 df_p_exibicao = df_p.copy()
                 df_p_exibicao['Data Entrega'] = df_p_exibicao['Data Entrega'].dt.strftime('%d/%m/%Y')
                 df_p_exibicao['Data Vencimento'] = df_p_exibicao['Data Vencimento'].dt.strftime('%d/%m/%Y')
                 
                 st.markdown(f"📋 **Pendências Filtradas:** {len(df_p_exibicao)} itens encontrados.")
                 st.dataframe(df_p_exibicao[['RE', 'Funcionário', 'Departamento', 'EPI', 'Qtd', 'Data Entrega']], use_container_width=True, hide_index=True)
-
+                
+                st.markdown("---")
+                if st.button("✉️ DISPARAR COBRANÇA PARA OS GESTORES FILTRADOS", type="secondary"):
+                    if EMAIL_REMETENTE == "seu_email_aqui@gmail.com":
+                        st.error("Configure as credenciais de e-mail.")
+                    elif df_p.empty:
+                        st.warning("O filtro atual está vazio.")
+                    else:
+                        with st.spinner("Enviando notificações..."):
+                            for depto_grupo, dados_grupo in df_p.groupby("Departamento"):
+                                gestor_row = df_gestores[df_gestores.iloc[:, 0].astype(str).str.strip().str.upper() == str(depto_grupo).strip().upper()]
+                                if not gestor_row.empty:
+                                    email_gestor = gestor_row.iloc[0, 2]
+                                    nome_gestor = gestor_row.iloc[0, 1]
+                                    
+                                    msg = MIMEMultipart()
+                                    msg['From'] = EMAIL_REMETENTE
+                                    msg['To'] = email_gestor
+                                    msg['Subject'] = f"✍️ [HST Semasa] Convocação: Servidores Pendentes de Assinatura de EPI"
+                                    
+                                    html_tabela = ""
+                                    for _, r in dados_grupo.iterrows():
+                                        dt_str = r['Data Entrega'].strftime('%d/%m/%Y')
+                                        html_tabela += f"<tr style='background-color: #fff2cc;'><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td>{r['Qtd']}</td><td>{dt_str}</td></tr>"
+                                    
+                                    corpo_html = f"<html><body><h2>Olá, {nome_gestor}!</h2><p>Há assinaturas de EPI pendentes para o setor {depto_grupo}.</p><table border='1'>{html_tabela}</table></body></html>"
+                                    msg.attach(MIMEText(corpo_html, 'html'))
+                                    try:
+                                        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                                        server.starttls()
+                                        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
+                                        server.sendmail(EMAIL_REMETENTE, email_gestor, msg.as_string())
+                                        server.quit()
+                                        st.write(f"📧 Cobrança enviada para **{nome_gestor}**")
+                                    except Exception as ex:
+                                        st.write(f"❌ Erro ao enviar: {ex}")
 # ==============================================================================
 # MENU 4: GERAR FICHA DE EPI (TRATAMENTO COMPLETO DE SINTAXE E FALLBACK DE DATA)
 # ==============================================================================
