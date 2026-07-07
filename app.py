@@ -185,7 +185,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO 1: LANÇAMENTO COM PERSISTÊNCIA DE MEMÓRIA (RE NÃO SOME)
+# VISÃO 1: LANÇAMENTO COM TRAVA POR COLUNA 5 (UID_Cracha)
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
     st.header("📝 Registro de Entrega de Equipamentos de Proteção")
@@ -194,25 +194,14 @@ if menu == "📝 Lançar Novos EPIs":
         st.warning("⚠️ Carregando tabelas base do GitHub...")
     else:
         df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
+        
+        # Mapeamentos ajustados para ler a coluna índice 4 (5ª coluna - UID_Cracha)
         mapa_re_nome = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows()}
+        mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
+        mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
+        
         lista_epis = sorted(df_epis.iloc[:, 0].dropna().unique().tolist())
         
-        # Área de Assinatura / Bypass
-        st.markdown("#### 💳 Autenticação")
-        bypass_nfc = st.checkbox("⚠️ Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
-        
-        nfc_input = ""
-        if not bypass_nfc:
-            nfc_input = st.text_input("CLIQUE AQUI e aproxime o Crachá do Leitor NFC para assinar:", type="password").strip()
-            situacao_assinatura = "Assinado" if nfc_input else "PENDENTE"
-            if nfc_input: st.success("🟢 Crachá reconhecido! Assinatura vinculada.")
-        else:
-            situacao_assinatura = "PENDENTE"
-            st.info("ℹ️ Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
-            
-        st.markdown("---")
-        
-        # REMOVIDO O 'with st.form' para evitar que o refresh limpe os inputs na tela
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             re_digitado = st.text_input("Digite o número do RE:", key="re_usuario").strip()
@@ -222,6 +211,27 @@ if menu == "📝 Lançar Novos EPIs":
                 st.error("❌ RE não localizado.")
             elif re_digitado and nome_funcionario: 
                 st.info(f"👤 Colaborador: {nome_funcionario}")
+                
+        st.markdown("---")
+        st.markdown("#### 💳 Autenticação e Validação")
+        bypass_nfc = st.checkbox("⚠️ Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
+        
+        situacao_assinatura = "PENDENTE"
+        
+        if not bypass_nfc:
+            nfc_input = st.text_input("CLIQUE AQUI e aproxime o Crachá do Leitor NFC para assinar:", type="password").strip()
+            if nfc_input and re_digitado:
+                cracha_esperado = mapa_re_cracha.get(re_digitado, "")
+                if nfc_input == cracha_esperado:
+                    situacao_assinatura = "Assinado"
+                    st.success("🟢 Crachá validado com sucesso! Assinatura legítima vinculada.")
+                else:
+                    dono_desse_cracha = mapa_cracha_nome.get(nfc_input, "Desconhecido")
+                    st.error(f"❌ Bloqueado por Segurança: Este crachá pertence a '{dono_desse_cracha}' e NÃO ao colaborador do RE digitado! O registro ficará PENDENTE.")
+        else:
+            st.info("ℹ️ Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
+            
+        st.markdown("---")
         
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
         
@@ -253,17 +263,17 @@ if menu == "📝 Lançar Novos EPIs":
                 
                 with st.spinner("Salvando lote no GitHub..."):
                     if salvar_lote_no_github(lote_linhas):
-                        st.success(f"🎉 Sucesso! {len(epis_selecionados)} item(ns) gravado(s) para {nome_funcionario}.")
+                        st.success(f"🎉 Sucesso! {len(epis_selecionados)} item(ns) gravado(s) para {nome_funcionario} (Status: {situacao_assinatura}).")
                         st.balloons()
                     else:
                         st.error("❌ Erro ao salvar no repositório do GitHub.")
 
 # ==============================================================================
-# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS VIA NFC (BAIXA EM LOTE)
+# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS COM TRAVA POR COLUNA 5 (UID_Cracha)
 # ==============================================================================
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Regularização de Assinaturas Pendentes")
-    st.markdown("Busque o RE do colaborador, confira os itens pendentes e aproxime o crachá para dar baixa completa.")
+    st.markdown("Busque o RE do colaborador, confira os itens pendentes e aproxime o crachá do próprio trabalhador.")
     
     re_busca = st.text_input("Digite o RE do funcionário para buscar pendências:").strip()
     
@@ -279,33 +289,44 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 st.warning(f"📋 Encontradas {len(df_pendentes_func)} entregas pendentes para este RE:")
                 st.dataframe(df_pendentes_func[["EPI", "Qtd", "Data Entrega"]], use_container_width=True)
                 
-                st.markdown("### 💳 Validação de Baixa")
+                st.markdown("### 💳 Validação de Baixa Segura")
                 nfc_baixa = st.text_input("APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", type="password").strip()
                 
                 if nfc_baixa:
-                    with st.spinner("Processando assinaturas e updating banco de dados..."):
-                        try:
-                            url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
-                            headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-                            req_get = requests.get(url_api, headers=headers)
-                            
-                            if req_get.status_code == 200:
-                                conteudo_bruto = base64.b64decode(req_get.json()['content']).decode('utf-8')
-                                df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), dtype=str)
+                    df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
+                    # Lendo a 5ª coluna (Índice 4) para pegar o UID correto
+                    mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
+                    mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
+                    
+                    cracha_correto = mapa_re_cracha.get(re_busca, "")
+                    
+                    if nfc_baixa != cracha_correto:
+                        dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
+                        st.error(f"❌ Bloqueado: Este crachá pertence a '{dono_desse_cracha}' e NÃO ao colaborador deste RE. Ação cancelada por segurança.")
+                    else:
+                        with st.spinner("Processando assinaturas legítimas e atualizando banco de dados..."):
+                            try:
+                                url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
+                                headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+                                req_get = requests.get(url_api, headers=headers)
                                 
-                                indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
-                                data_hoje_str = datetime.now().strftime("%Y-%m-%d")
-                                
-                                for idx_orig in indices_para_alterar:
-                                    df_raw_csv.iloc[int(idx_orig), 4] = data_hoje_str
-                                
-                                if atualizar_csv_completo(df_raw_csv):
-                                    st.success(f"🎉 Sucesso! {len(indices_para_alterar)} pendências foram eliminadas e assinadas por aproximação!")
-                                    st.balloons()
-                                else:
-                                    st.error("Erro ao salvar as assinaturas no GitHub.")
-                        except Exception as ex:
-                            st.error(f"Falha técnica no processo: {ex}")
+                                if req_get.status_code == 200:
+                                    conteudo_bruto = base64.b64decode(req_get.json()['content']).decode('utf-8')
+                                    df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), dtype=str)
+                                    
+                                    indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
+                                    data_hoje_str = datetime.now().strftime("%Y-%m-%d")
+                                    
+                                    for idx_orig in indices_para_alterar:
+                                        df_raw_csv.iloc[int(idx_orig), 4] = data_hoje_str
+                                    
+                                    if atualizar_csv_completo(df_raw_csv):
+                                        st.success(f"🎉 Perfeito! {len(indices_para_alterar)} pendências do colaborador foram eliminadas e devidamente assinadas!")
+                                        st.balloons()
+                                    else:
+                                        st.error("Erro ao salvar as assinaturas no GitHub.")
+                            except Exception as ex:
+                                st.error(f"Falha técnica no processo: {ex}")
 
 # ==============================================================================
 # VISÕES DO DASHBOARD
