@@ -183,7 +183,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO: FORMULÁRIO NATIVO AVANÇADO (RE, MÚLTIPLOS EPIS E NFC)
+# VISÃO: FORMULÁRIO NATIVO AVANÇADO CORRIGIDO (NFC SEM APAGAR OS DADOS)
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
     st.header("📝 Registro de Entrega de Equipamentos de Proteção")
@@ -193,26 +193,40 @@ if menu == "📝 Lançar Novos EPIs":
         st.warning("⚠️ Aguardando carregamento das tabelas base do GitHub...")
     else:
         # Criar dicionário de RE -> Nome para busca instantânea rápida
-        # Garante que o RE seja uma string limpa e sem decimais
         df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
         mapa_re_nome = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows()}
         lista_epis = sorted(df_epis.iloc[:, 0].dropna().unique().tolist())
         
-        with st.form("form_lancamento_avancado", clear_on_submit=True):
+        # 1. ENTRADA DO CRACHÁ NFC (Fora do form para não dar refresh e limpar os campos)
+        st.markdown("#### 💳 Autenticação e Assinatura Eletrônica")
+        nfc_input = st.text_input(
+            "CLIQUE AQUI e aproxime o Crachá do Leitor NFC para assinar:", 
+            type="password", 
+            help="Mantenha o cursor piscando aqui antes de aproximar o crachá físico."
+        ).strip()
+        
+        situacao_assinatura = "Assinado" if nfc_input else "PENDENTE"
+        
+        if nfc_input:
+            st.success("🟢 Crachá lido com sucesso! Assinatura vinculada para este lançamento.")
+        else:
+            st.warning("⚠️ Nenhum crachá detectado ainda. O registro atual está como 'PENDENTE'.")
+            
+        st.markdown("---")
+        
+        # 2. FORMULÁRIO DOS DADOS DO EPI (Preserva as seleções na tela)
+        with st.form("form_lancamento_avancado", clear_on_submit=False):
             col_f1, col_f2 = st.columns(2)
             with col_f1:
                 re_digitado = st.text_input("Digite o número do RE:", key="input_re").strip()
             with col_f2:
-                # Busca o nome dinamicamente baseado no RE digitado
                 nome_funcionario = mapa_re_nome.get(re_digitado, "")
                 if re_digitado and not nome_funcionario:
                     st.error("❌ RE não localizado na base de dados de funcionários.")
                 elif re_digitado and nome_funcionario:
-                    st.success(f"👤 Colaborador: {nome_funcionario}")
+                    st.info(f"👤 Colaborador: {nome_funcionario}")
             
-            st.markdown("---")
-            
-            # Seleção de Múltiplos EPIs de uma vez só
+            # Seleção de Múltiplos EPIs
             epis_selecionados = st.multiselect(
                 "Selecione os Equipamentos de Proteção (EPIs):", 
                 options=lista_epis,
@@ -224,23 +238,6 @@ if menu == "📝 Lançar Novos EPIs":
                 quantidade_sel = st.number_input("Quantidade (Aplicada a cada item selecionado):", min_value=1, max_value=10, value=1)
             with col_f4:
                 data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date())
-                
-            st.markdown("---")
-            st.markdown("#### 💳 Autenticação e Assinatura Eletrônica")
-            
-            # Campo de validação do Crachá NFC
-            nfc_input = st.text_input(
-                "Aproxime o Crachá do Leitor NFC para assinar:", 
-                type="password", 
-                help="Clique neste campo antes de aproximar o crachá do leitor físico."
-            ).strip()
-            
-            situacao_assinatura = "Assinado" if nfc_input else "PENDENTE"
-            
-            if nfc_input:
-                st.info("🟢 Crachá lido com sucesso! Assinatura vinculada.")
-            else:
-                st.warning("⚠️ Nenhum crachá detectado. O registro será salvo como 'PENDENTE'.")
                 
             st.markdown("<br>", unsafe_allow_html=True)
             botao_salvar = st.form_submit_button("💾 Gravar Lançamentos no Sistema")
@@ -255,7 +252,6 @@ if menu == "📝 Lançar Novos EPIs":
                     erros_grava = 0
                     
                     with st.spinner("Registrando itens no banco de dados do GitHub..."):
-                        # Loop para salvar cada item selecionado como uma linha independente no CSV
                         for epi in epis_selecionados:
                             nova_linha = {
                                 "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -272,13 +268,12 @@ if menu == "📝 Lançar Novos EPIs":
                                 erros_grava += 1
                     
                     if sucessos_grava == len(epis_selecionados):
-                        st.success(f"🎉 Perfeito! {sucessos_grava} EPI(s) registrado(s) com sucesso para o colaborador {nome_funcionario}.")
+                        st.success(f"🎉 Perfeito! {sucessos_grava} EPI(s) registrado(s) com sucesso para {nome_funcionario}.")
                         st.balloons()
                     elif sucessos_grava > 0:
-                        st.warning(f"⚠️ Operação parcial: {sucessos_grava} itens foram salvos, mas {erros_grava} falharam na sincronização.")
+                        st.warning(f"⚠️ Operação parcial: {sucessos_grava} itens salvos, mas {erros_grava} falharam.")
                     else:
-                        st.error("❌ Erro crítico: Não foi possível gravar as informações no GitHub.")
-
+                        st.error("❌ Erro crítico: Não foi possível gravar no GitHub. Verifique a internet ou o Token.")
 # ==============================================================================
 # VISÕES DO DASHBOARD (MANTIDAS EXATAMENTE IGUAIS)
 # ==============================================================================
