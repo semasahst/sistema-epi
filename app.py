@@ -89,7 +89,7 @@ def atualizar_csv_completo(df_novo):
     return False
 
 # ==============================================================================
-# CONSTRUÇÃO DA BASE DE ALERTAS
+# CONSTRUÇÃO DA BASE DE ALERTAS (CORRIGIDA PARA TRATAR O STATUS PENDENTE)
 # ==============================================================================
 def construir_base_alertas():
     try:
@@ -127,16 +127,25 @@ def construir_base_alertas():
         if not re_val or re_val == 'nan' or re_val == '':
             continue
 
+        # Correção aqui: Verifica se está pendente independente de onde esteja escrito
         if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
             status_assinatura = "Pendente"
-            raw_data_entrega_limpa = raw_timestamp.split()[0] if len(raw_timestamp) > 10 else datetime.now().strftime("%d/%m/%Y")
+            # Se a data está como PENDENTE, extrai a data do Carimbo de data/hora para não bugar o filtro do Streamlit
+            if len(raw_timestamp) >= 10:
+                raw_data_entrega_limpa = raw_timestamp.split()[0] # Pega o "DD/MM/AAAA" do timestamp
+            else:
+                raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
         else:
             status_assinatura = "Assinado"
             raw_data_entrega_limpa = raw_data_entrega
             
+        # Converte de forma segura tratando formato brasileiro (dayfirst=True)
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega_limpa, errors='coerce', dayfirst=True)
         if pd.isnull(dt_entrega_parsed):
-            dt_entrega_parsed = hoje
+            # Fallback secundário se der erro de conversão americana/brasileira
+            dt_entrega_parsed = pd.to_datetime(raw_data_entrega_limpa, errors='coerce')
+            if pd.isnull(dt_entrega_parsed):
+                dt_entrega_parsed = hoje
             
         dt_entrega_parsed = pd.to_datetime(dt_entrega_parsed.date())
         dias_validade = mapa_validades.get(nome_epi, 90)
@@ -185,7 +194,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO 1: LANÇAMENTO COM TRAVA POR COLUNA 5 (UID_Cracha)
+# VISÃO 1: LANÇAMENTO COM TRAVA E DATA SEGURA
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
     st.header("📝 Registro de Entrega de Equipamentos de Proteção")
@@ -195,7 +204,6 @@ if menu == "📝 Lançar Novos EPIs":
     else:
         df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
         
-        # Mapeamentos ajustados para ler a coluna índice 4 (5ª coluna - UID_Cracha)
         mapa_re_nome = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows()}
         mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
         mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
@@ -257,7 +265,8 @@ if menu == "📝 Lançar Novos EPIs":
                         "RE": str(re_digitado),
                         "Nome completo do funcionário:": str(nome_funcionario),
                         "EPI": str(epi),
-                        "Data da entrega:": data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE",
+                        # ATENÇÃO: Se for assinado grava a data, se for bypass, deixa claro como PENDENTE
+                        "Data da entrega:": data_entrega_sel.strftime("%d/%m/%Y") if situacao_assinatura == "Assinado" else "PENDENTE",
                         "Quantidade:": int(quantidade_sel)
                     })
                 
@@ -269,7 +278,7 @@ if menu == "📝 Lançar Novos EPIs":
                         st.error("❌ Erro ao salvar no repositório do GitHub.")
 
 # ==============================================================================
-# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS COM TRAVA POR COLUNA 5 (UID_Cracha)
+# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS COM PARSER CORRIGIDO
 # ==============================================================================
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Regularização de Assinaturas Pendentes")
@@ -287,14 +296,17 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 st.success("🎉 Este colaborador não possui nenhuma assinatura pendente no sistema!")
             else:
                 st.warning(f"📋 Encontradas {len(df_pendentes_func)} entregas pendentes para este RE:")
-                st.dataframe(df_pendentes_func[["EPI", "Qtd", "Data Entrega"]], use_container_width=True)
+                
+                # Exibição limpa
+                df_exibir = df_pendentes_func[["EPI", "Qtd", "Data Entrega"]].copy()
+                df_exibir["Data Entrega"] = df_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_exibir, use_container_width=True)
                 
                 st.markdown("### 💳 Validação de Baixa Segura")
                 nfc_baixa = st.text_input("APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", type="password").strip()
                 
                 if nfc_baixa:
                     df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
-                    # Lendo a 5ª coluna (Índice 4) para pegar o UID correto
                     mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
                     mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
                     
@@ -304,7 +316,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                         dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
                         st.error(f"❌ Bloqueado: Este crachá pertence a '{dono_desse_cracha}' e NÃO ao colaborador deste RE. Ação cancelada por segurança.")
                     else:
-                        with st.spinner("Processando assinaturas legítimas e atualizando banco de dados..."):
+                        with st.spinner("Processando assinaturas legítimas..."):
                             try:
                                 url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
                                 headers = {"Authorization": f"token {GITHUB_TOKEN}"}
@@ -315,13 +327,13 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                     df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), dtype=str)
                                     
                                     indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
-                                    data_hoje_str = datetime.now().strftime("%Y-%m-%d")
+                                    data_hoje_str = datetime.now().strftime("%d/%m/%Y") # Formato brasileiro padrão
                                     
                                     for idx_orig in indices_para_alterar:
                                         df_raw_csv.iloc[int(idx_orig), 4] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
-                                        st.success(f"🎉 Perfeito! {len(indices_para_alterar)} pendências do colaborador foram eliminadas e devidamente assinadas!")
+                                        st.success(f"🎉 Perfeito! {len(indices_para_alterar)} pendências eliminadas e assinadas por aproximação!")
                                         st.balloons()
                                     else:
                                         st.error("Erro ao salvar as assinaturas no GitHub.")
@@ -361,6 +373,12 @@ else:
             st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
             aba_val, aba_ass = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
             with aba_val:
-                st.dataframe(df_base_completa.sort_values(by="Dias Restantes"), use_container_width=True)
+                df_exib_val = df_base_completa.copy()
+                df_exib_val["Data Entrega"] = df_exib_val["Data Entrega"].dt.strftime("%d/%m/%Y")
+                df_exib_val["Data Vencimento"] = df_exib_val["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_exib_val.sort_values(by="Dias Restantes"), use_container_width=True)
             with aba_ass:
-                st.dataframe(df_base_completa[df_base_completa['Assinatura'] == "Pendente"], use_container_width=True)
+                df_exib_ass = df_base_completa[df_base_completa['Assinatura'] == "Pendente"].copy()
+                df_exib_ass["Data Entrega"] = df_exib_ass["Data Entrega"].dt.strftime("%d/%m/%Y")
+                df_exib_ass["Data Vencimento"] = df_exib_ass["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_exib_ass, use_container_width=True)
