@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import requests
 import base64
+import io  # Importação correta adicionada aqui!
 
 # Configuração global da página do Streamlit (Deve ser a primeira instrução)
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
@@ -10,10 +11,10 @@ st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 # ==============================================================================
 # CONFIGURAÇÕES DE ACESSO AOS ARQUIVOS REPOSITÓRIO (GITHUB)
 # ==============================================================================
-# IMPORTANTE: Altere para os dados exatos do seu GitHub se forem diferentes
-GITHUB_USER = "semasahst"  # Mude para o seu nome de usuário do GitHub
+# Ajustado automaticamente para o seu usuário baseado nos seus prints anteriores
+GITHUB_USER = "semasahst"  
 GITHUB_REPO = "sistema-epi"
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "") # Chave de segurança que vamos configurar
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 
 URL_RESPOSTAS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/respostas.csv"
 URL_FUNCIONARIOS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/funcionarios.csv"
@@ -34,7 +35,7 @@ def buscar_dados_planilhas():
 df_func, df_epis = buscar_dados_planilhas()
 
 # ==============================================================================
-# FUNÇÃO PARA GRAVAR DADOS DIRETAMENTE NO GITHUB CSV
+# FUNÇÃO PARA GRAVAR DADOS DIRETAMENTE NO GITHUB CSV (CORRIGIDA)
 # ==============================================================================
 def salvar_no_github(nova_linha_dict):
     if not GITHUB_TOKEN:
@@ -50,12 +51,12 @@ def salvar_no_github(nova_linha_dict):
         dados_repo = req_get.json()
         sha_arquivo = dados_repo['sha']
         conteudo_antigo = base64.b64decode(dados_repo['content']).decode('utf-8')
-        df_atual = pd.read_csv(pd.compat.StringIO(conteudo_antigo), dtype=str)
+        # CORREÇÃO AQUI: Usando o io.StringIO correto e moderno
+        df_atual = pd.read_csv(io.StringIO(conteudo_antigo), dtype=str)
     else:
-        # Se o arquivo não existir ou falhar, tenta ler pela URL pública ou cria novo
         try:
             df_atual = pd.read_csv(URL_RESPOSTAS, dtype=str)
-            sha_arquivo = "" # Precisará buscar o SHA de qualquer forma se for atualizar por API
+            sha_arquivo = "" 
         except:
             st.error("Não foi possível sincronizar com o histórico do GitHub.")
             return False
@@ -81,7 +82,6 @@ def salvar_no_github(nova_linha_dict):
     else:
         st.error(f"Erro ao enviar dados para o GitHub: {req_put.text}")
         return False
-
 # ==============================================================================
 # ENGENHARIA DE DADOS MASTER: TRATAMENTO ROBUSTO DE ALERTAS E PENDÊNCIAS
 # ==============================================================================
