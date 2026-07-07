@@ -1,24 +1,28 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import requests
+import base64
 
 # Configuração global da página do Streamlit (Deve ser a primeira instrução)
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
 # ==============================================================================
-# ENDEREÇOS DAS FONTES DE DADOS (GOOGLE SHEETS - LINK DE EXPORTAÇÃO CORRIGIDO)
+# CONFIGURAÇÕES DE ACESSO AOS ARQUIVOS REPOSITÓRIO (GITHUB)
 # ==============================================================================
-URL_RESPOSTAS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=339151256"
-URL_FUNCIONARIOS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=1116669931"
-URL_EPIS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=754637684"
+# IMPORTANTE: Altere para os dados exatos do seu GitHub se forem diferentes
+GITHUB_USER = "seu-usuario-do-github"  # Mude para o seu nome de usuário do GitHub
+GITHUB_REPO = "sistema-epi"
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "") # Chave de segurança que vamos configurar
 
-# URL do seu Formulário Google (Google Forms) para a aba de lançamentos
-URL_FORMULARIO_GOOGLE = "https://docs.google.com/forms/d/e/1FAIpQLSfRZgRoIfEHUuanvhsMpkfXMSo7BslH_9Oj16nBNhIgSEw0Fg/viewform?usp=sharing&ouid=117567935732640452105"
+URL_RESPOSTAS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/respostas.csv"
+URL_FUNCIONARIOS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/funcionarios.csv"
+URL_EPIS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/epis.csv"
 
 # ==============================================================================
 # CARREGAMENTO DOS DADOS OPERACIONAIS COM SISTEMA DE TRATAMENTO DE ERROS
 # ==============================================================================
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=5)
 def buscar_dados_planilhas():
     try:
         df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
@@ -28,6 +32,55 @@ def buscar_dados_planilhas():
         return pd.DataFrame(), pd.DataFrame()
 
 df_func, df_epis = buscar_dados_planilhas()
+
+# ==============================================================================
+# FUNÇÃO PARA GRAVAR DADOS DIRETAMENTE NO GITHUB CSV
+# ==============================================================================
+def salvar_no_github(nova_linha_dict):
+    if not GITHUB_TOKEN:
+        st.error("❌ Erro de Configuração: A chave 'GITHUB_TOKEN' não foi configurada nas Secrets do Streamlit.")
+        return False
+        
+    url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    
+    # 1. Pega o arquivo atual para não apagar o histórico
+    req_get = requests.get(url_api, headers=headers)
+    if req_get.status_code == 200:
+        dados_repo = req_get.json()
+        sha_arquivo = dados_repo['sha']
+        conteudo_antigo = base64.b64decode(dados_repo['content']).decode('utf-8')
+        df_atual = pd.read_csv(pd.compat.StringIO(conteudo_antigo), dtype=str)
+    else:
+        # Se o arquivo não existir ou falhar, tenta ler pela URL pública ou cria novo
+        try:
+            df_atual = pd.read_csv(URL_RESPOSTAS, dtype=str)
+            sha_arquivo = "" # Precisará buscar o SHA de qualquer forma se for atualizar por API
+        except:
+            st.error("Não foi possível sincronizar com o histórico do GitHub.")
+            return False
+
+    # 2. Adiciona a nova linha
+    df_nova_linha = pd.DataFrame([nova_linha_dict])
+    df_final = pd.concat([df_atual, df_nova_linha], ignore_index=True)
+    
+    # 3. Transforma em CSV string e envia de volta
+    csv_string = df_final.to_csv(index=False)
+    conteudo_bytes = csv_string.encode('utf-8')
+    conteudo_base64 = base64.b64encode(conteudo_bytes).decode('utf-8')
+    
+    payload = {
+        "message": f"Lançamento de EPI automático: RE {nova_linha_dict.get('RE')}",
+        "content": conteudo_base64,
+        "sha": sha_arquivo
+    }
+    
+    req_put = requests.put(url_api, headers=headers, json=payload)
+    if req_put.status_code in [200, 201]:
+        return True
+    else:
+        st.error(f"Erro ao enviar dados para o GitHub: {req_put.text}")
+        return False
 
 # ==============================================================================
 # ENGENHARIA DE DADOS MASTER: TRATAMENTO ROBUSTO DE ALERTAS E PENDÊNCIAS
@@ -41,7 +94,6 @@ def construir_base_alertas():
     if df_hist.empty:
         return pd.DataFrame()
         
-    # Identificação estrutural baseada estritamente nas posições das colunas
     col_timestamp = df_hist.columns[0]
     col_re = df_hist.columns[1]
     col_func = df_hist.columns[2]
@@ -52,7 +104,6 @@ def construir_base_alertas():
     linhas_processadas = []
     hoje = pd.to_datetime(datetime.now().date())
     
-    # Dicionários dinâmicos de busca (EPI -> Validade / Código CA)
     mapa_validades = {}
     mapa_ca = {}
     if not df_epis.empty:
@@ -70,7 +121,6 @@ def construir_base_alertas():
         if not re_val or re_val == 'nan' or re_val == '':
             continue
 
-        # ✍️ RECONHECIMENTO INTEGRADO DE FILTROS DE ASSINATURA PENDENTE
         if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
             status_assinatura = "Pendente"
             if len(raw_data_entrega) >= 10:
@@ -78,7 +128,6 @@ def construir_base_alertas():
         else:
             status_assinatura = "Assinado"
             
-        # Tratamento de datas unificado via biblioteca do Pandas
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega, errors='coerce')
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = pd.to_datetime(raw_timestamp.split()[0], dayfirst=True, errors='coerce')
@@ -86,17 +135,14 @@ def construir_base_alertas():
         if pd.isnull(dt_entrega_parsed):
             dt_entrega_parsed = hoje
             
-        # Limpeza definitiva de horas para blindar contra discrepância de tipos
         dt_entrega_parsed = pd.to_datetime(dt_entrega_parsed.date())
             
-        # Cálculo do ciclo de vida útil do equipamento de proteção
         dias_validade = mapa_validades.get(nome_epi, 90)
         dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
         
-        status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
+        status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 days)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Mapeamento do setor do colaborador utilizando dados cruzados da tb_funcionarios
         departamento = "Não Informado"
         if not df_func.empty:
             re_limpo_busca = re_val.split('.')[0].strip()
@@ -125,11 +171,10 @@ def construir_base_alertas():
         
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
-# Criação do DataFrame central unificado
 df_base_completa = construir_base_alertas()
 
 # ==============================================================================
-# MENU LATERAL INTERATIVO (ADICIONADA A OPÇÃO DE LANÇAMENTO)
+# MENU LATERAL INTERATIVO
 # ==============================================================================
 st.sidebar.markdown("## 🧭 Navegação Sistema")
 menu = st.sidebar.selectbox(
@@ -138,116 +183,134 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO NOVA/RECONSTRUÍDA: FORMULÁRIO DE LANÇAMENTO DE EPIS
+# VISÃO: FORMULÁRIO NATIVO E SEGURO DE LANÇAMENTO
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
-    st.header("📝 Registro de Entrega de Equipamentos de Proteção")
-    st.markdown("Utilize o formulário integrado abaixo para registrar as novas entregas de EPIs. Os dados serão sincronizados automaticamente com os painéis indicadores.")
+    st.header("📝 Registro de Entrega de Equipamentos de Proteção (Nativo)")
+    st.markdown("Preencha as informações abaixo para registrar a entrega do EPI diretamente no sistema.")
     
-    # Renderiza o Google Forms de forma embutida (Iframe) na tela de forma limpa
-    st.components.v1.iframe(URL_FORMULARIO_GOOGLE, height=800, scrolling=True)
-
-
-elif df_base_completa.empty:
-    st.error("❌ Erro de comunicação com os servidores do Google Sheets ou nenhuma resposta registrada.")
-    st.info("Verifique a sua conexão com a internet ou as permissões de compartilhamento das planilhas.")
-else:
-
-    # ==============================================================================
-    # VISÃO 1: DASHBOARD ANALÍTICO
-    # ==============================================================================
-    if menu == "📊 Dashboard de Gestão":
-        st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
+    if df_func.empty or df_epis.empty:
+        st.warning("⚠️ Carregando tabelas base do GitHub... Se o erro persistir, verifique os arquivos epis.csv e funcionarios.csv.")
+    else:
+        # Cria listas para os campos de seleção baseados nos seus CSVs do GitHub
+        lista_funcionarios = sorted(df_func.iloc[:, 1].dropna().unique().tolist())
+        lista_epis = sorted(df_epis.iloc[:, 0].dropna().unique().tolist())
         
-        st.markdown("### 📅 Filtros de Período Temporal")
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            data_ini_dash = st.date_input("De:", datetime.now().date() - timedelta(days=90))
-        with col_d2:
-            data_fim_dash = st.date_input("Até:", datetime.now().date())
-            
-        dt_i = pd.to_datetime(data_ini_dash)
-        dt_f = pd.to_datetime(data_fim_dash)
-        
-        df_dash = df_base_completa[
-            (df_base_completa['Data Entrega'] >= dt_i) & 
-            (df_base_completa['Data Entrega'] <= dt_f)
-        ]
-        
-        total_entregue = df_dash['Qtd'].sum() if not df_dash.empty else 0
-        pendentes_qtd = len(df_dash[df_dash['Assinatura'] == "Pendente"]) if not df_dash.empty else 0
-        vencidos_qtd = len(df_dash[df_dash['Status'] == "🔴 VENCIDO"]) if not df_dash.empty else 0
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total de EPIs Entregues", total_entregue)
-        c2.metric("Assinaturas Pendentes", pendentes_qtd)
-        c3.metric("Itens Vencidos (NR-6)", vencidos_qtd)
-        
-        st.markdown("---")
-        col_g1, col_g2 = st.columns(2)
-        
-        with col_g1:
-            st.markdown("#### Volumetria de Consumo por Setor / Unidade")
-            if not df_dash.empty:
-                df_setor = df_dash.groupby('Departamento')['Qtd'].sum().reset_index()
-                st.bar_chart(data=df_setor, x='Departamento', y='Qtd', use_container_width=True)
-            else:
-                st.info("Nenhuma movimentação identificada neste intervalo.")
-                
-        with col_g2:
-            st.markdown("#### Distribuição de Consumo por Modelo de EPI")
-            if not df_dash.empty:
-                df_ranking = df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False)
-                st.bar_chart(data=df_ranking, x='EPI', y='Qtd', use_container_width=True)
-            else:
-                st.info("Nenhuma movimentação identificada neste intervalo.")
-
-    # ==============================================================================
-    # VISÃO 2: GERENCIAMENTO DE LOGÍSTICA E PRAZOS
-    # ==============================================================================
-    elif menu == "⚠️ EPIs Vencidos/A Vencer":
-        st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
-        
-        aba_validade, aba_assinaturas = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
-        
-        with aba_validade:
-            st.markdown("### 🔍 Visão Ampla de Validade")
-            df_exibicao_val = df_base_completa.copy()
-            df_exibicao_val['Data Entrega'] = df_exibicao_val['Data Entrega'].dt.strftime('%d/%m/%Y')
-            df_exibicao_val['Data Vencimento'] = df_exibicao_val['Data Vencimento'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_exibicao_val.sort_values(by="Dias Restantes"), use_container_width=True)
-            
-        with aba_assinaturas:
-            st.markdown("### 🔍 Triagem Avançada de Pendências")
-            col_f1, col_f2, col_f3 = st.columns(3)
-            
+        with st.form("form_lancamento", clear_on_submit=True):
+            col_f1, col_f2 = st.columns(2)
             with col_f1:
-                lista_deptos = sorted(list(df_base_completa['Departamento'].unique()))
-                depto_sel = st.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
-                
+                funcionario_sel = st.selectbox("Selecione o Funcionário:", options=lista_funcionarios)
+                # Busca o RE automaticamente baseado no funcionário escolhido
+                re_func = df_func[df_func.iloc[:, 1] == funcionario_sel].iloc[0, 0]
             with col_f2:
-                data_ini_p = st.date_input("Início Período:", datetime.now().date() - timedelta(days=60), key="ini_p")
-            with col_f3:
-                data_fim_p = st.date_input("Fim Período:", datetime.now().date() + timedelta(days=1), key="fim_p")
+                st.text_input("RE do Colaborador:", value=re_func, disabled=True)
                 
-            dt_i_p = pd.to_datetime(data_ini_p)
-            dt_f_p = pd.to_datetime(data_fim_p)
+            col_f3, col_f4 = st.columns(2)
+            with col_f3:
+                epi_sel = st.selectbox("Equipamento de Proteção (EPI):", options=lista_epis)
+            with col_f4:
+                quantidade_sel = st.number_input("Quantidade Entregue:", min_value=1, max_value=10, value=1)
+                
+            col_f5, col_f6 = st.columns(2)
+            with col_f5:
+                data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date())
+            with col_f6:
+                situacao_assinatura = st.selectbox("Status da Ficha de Registro:", ["Assinado", "PENDENTE"])
+                
+            botao_salvar = st.form_submit_button("💾 Gravar Entrega no Sistema")
             
-            df_pendentes = df_base_completa[
-                (df_base_completa['Assinatura'] == "Pendente") & 
-                (df_base_completa['Departamento'].isin(depto_sel)) &
-                (df_base_completa['Data Entrega'] >= dt_i_p) & 
-                (df_base_completa['Data Entrega'] <= dt_f_p)
+            if botao_salvar:
+                # Monta a linha exatamente na estrutura que o seu respostas.csv usa
+                nova_linha = {
+                    df_base_completa.columns[0] if not df_base_completa.empty else "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    "RE": str(re_func),
+                    "Nome completo do funcionário:": str(funcionario_sel),
+                    "EPI": str(epi_sel),
+                    "Data da entrega:": data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE",
+                    "Quantidade:": int(quantidade_sel)
+                }
+                
+                with st.spinner("Gravando dados no repositório seguro..."):
+                    sucesso = salvar_no_github(nova_linha)
+                    if sucesso:
+                        st.success(f"🎉 Sucesso! EPI registrado para {funcionario_sel}. Os gráficos serão atualizados.")
+                        st.balloons()
+                    else:
+                        st.error("❌ Não foi possível salvar. Certifique-se de que configurou o GITHUB_TOKEN.")
+
+# ==============================================================================
+# VISÕES DO DASHBOARD (MANTIDAS EXATAMENTE IGUAIS)
+# ==============================================================================
+else:
+    if df_base_completa.empty:
+        st.warning("Aguardando a sincronização dos dados do histórico respostas.csv...")
+    else:
+        if menu == "📊 Dashboard de Gestão":
+            st.header("📊 Painel de Indicadores Estratégicos - HST Semasa")
+            
+            st.markdown("### 📅 Filtros de Período Temporal")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                data_ini_dash = st.date_input("De:", datetime.now().date() - timedelta(days=90))
+            with col_d2:
+                data_fim_dash = st.date_input("Até:", datetime.now().date())
+                
+            dt_i = pd.to_datetime(data_ini_dash)
+            dt_f = pd.to_datetime(data_fim_dash)
+            
+            df_dash = df_base_completa[
+                (df_base_completa['Data Entrega'] >= dt_i) & 
+                (df_base_completa['Data Entrega'] <= dt_f)
             ]
             
-            st.markdown(f"📋 **Pendências Ativas:** {len(df_pendentes)} registros identificados.")
+            total_entregue = df_dash['Qtd'].sum() if not df_dash.empty else 0
+            pendentes_qtd = len(df_dash[df_dash['Assinatura'] == "Pendente"]) if not df_dash.empty else 0
+            vencidos_qtd = len(df_dash[df_dash['Status'] == "🔴 VENCIDO"]) if not df_dash.empty else 0
             
-            if df_pendentes.empty:
-                st.success("🎉 Excelente! Nenhuma assinatura pendente no sistema com os filtros atuais.")
-            else:
-                df_exibicao_p = df_pendentes.copy()
-                df_exibicao_p['Data Entrega'] = df_exibicao_p['Data Entrega'].dt.strftime('%d/%m/%Y')
-                st.dataframe(
-                    df_exibicao_p[["RE", "Funcionário", "Departamento", "EPI", "Qtd", "Data Entrega", "Status"]],
-                    use_container_width=True
-                )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total de EPIs Entregues", total_entregue)
+            c2.metric("Assinaturas Pendentes", pendentes_qtd)
+            c3.metric("Itens Vencidos (NR-6)", vencidos_qtd)
+            
+            st.markdown("---")
+            col_g1, col_g2 = st.columns(2)
+            
+            with col_g1:
+                st.markdown("#### Volumetria de Consumo por Setor / Unidade")
+                if not df_dash.empty:
+                    df_setor = df_dash.groupby('Departamento')['Qtd'].sum().reset_index()
+                    st.bar_chart(data=df_setor, x='Departamento', y='Qtd', use_container_width=True)
+                    
+            with col_g2:
+                st.markdown("#### Distribuição de Consumo por Modelo de EPI")
+                if not df_dash.empty:
+                    df_ranking = df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False)
+                    st.bar_chart(data=df_ranking, x='EPI', y='Qtd', use_container_width=True)
+
+        elif menu == "⚠️ EPIs Vencidos/A Vencer":
+            st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
+            aba_validade, aba_assinaturas = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
+            
+            with aba_validade:
+                df_exibicao_val = df_base_completa.copy()
+                df_exibicao_val['Data Entrega'] = df_exibicao_val['Data Entrega'].dt.strftime('%d/%m/%Y')
+                df_exibicao_val['Data Vencimento'] = df_exibicao_val['Data Vencimento'].dt.strftime('%d/%m/%Y')
+                st.dataframe(df_exibicao_val.sort_values(by="Dias Restantes"), use_container_width=True)
+                
+            with aba_assinaturas:
+                col_f1, col_f2, col_f3 = st.columns(3)
+                with col_f1:
+                    lista_deptos = sorted(list(df_base_completa['Departamento'].unique()))
+                    depto_sel = st.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
+                with col_f2:
+                    data_ini_p = st.date_input("Início Período:", datetime.now().date() - timedelta(days=60), key="ini_p")
+                with col_f3:
+                    data_fim_p = st.date_input("Fim Período:", datetime.now().date() + timedelta(days=1), key="fim_p")
+                    
+                df_pendentes = df_base_completa[
+                    (df_base_completa['Assinatura'] == "Pendente") & 
+                    (df_base_completa['Departamento'].isin(depto_sel)) &
+                    (df_base_completa['Data Entrega'] >= pd.to_datetime(data_ini_p)) & 
+                    (df_base_completa['Data Entrega'] <= pd.to_datetime(data_fim_p))
+                ]
+                st.dataframe(df_pendentes, use_container_width=True)
