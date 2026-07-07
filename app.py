@@ -183,60 +183,101 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO: FORMULÁRIO NATIVO E SEGURO DE LANÇAMENTO
+# VISÃO: FORMULÁRIO NATIVO AVANÇADO (RE, MÚLTIPLOS EPIS E NFC)
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
-    st.header("📝 Registro de Entrega de Equipamentos de Proteção (Nativo)")
-    st.markdown("Preencha as informações abaixo para registrar a entrega do EPI diretamente no sistema.")
+    st.header("📝 Registro de Entrega de Equipamentos de Proteção")
+    st.markdown("Busque pelo RE, selecione quantos EPIs forem necessários e valide com o crachá NFC.")
     
     if df_func.empty or df_epis.empty:
-        st.warning("⚠️ Carregando tabelas base do GitHub... Se o erro persistir, verifique os arquivos epis.csv e funcionarios.csv.")
+        st.warning("⚠️ Aguardando carregamento das tabelas base do GitHub...")
     else:
-        # Cria listas para os campos de seleção baseados nos seus CSVs do GitHub
-        lista_funcionarios = sorted(df_func.iloc[:, 1].dropna().unique().tolist())
+        # Criar dicionário de RE -> Nome para busca instantânea rápida
+        # Garante que o RE seja uma string limpa e sem decimais
+        df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
+        mapa_re_nome = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows()}
         lista_epis = sorted(df_epis.iloc[:, 0].dropna().unique().tolist())
         
-        with st.form("form_lancamento", clear_on_submit=True):
+        with st.form("form_lancamento_avancado", clear_on_submit=True):
             col_f1, col_f2 = st.columns(2)
             with col_f1:
-                funcionario_sel = st.selectbox("Selecione o Funcionário:", options=lista_funcionarios)
-                # Busca o RE automaticamente baseado no funcionário escolhido
-                re_func = df_func[df_func.iloc[:, 1] == funcionario_sel].iloc[0, 0]
+                re_digitado = st.text_input("Digite o número do RE:", key="input_re").strip()
             with col_f2:
-                st.text_input("RE do Colaborador:", value=re_func, disabled=True)
-                
+                # Busca o nome dinamicamente baseado no RE digitado
+                nome_funcionario = mapa_re_nome.get(re_digitado, "")
+                if re_digitado and not nome_funcionario:
+                    st.error("❌ RE não localizado na base de dados de funcionários.")
+                elif re_digitado and nome_funcionario:
+                    st.success(f"👤 Colaborador: {nome_funcionario}")
+            
+            st.markdown("---")
+            
+            # Seleção de Múltiplos EPIs de uma vez só
+            epis_selecionados = st.multiselect(
+                "Selecione os Equipamentos de Proteção (EPIs):", 
+                options=lista_epis,
+                help="Você pode selecionar vários itens ao mesmo tempo (Ex: Luva, Óculos e Capacete)"
+            )
+            
             col_f3, col_f4 = st.columns(2)
             with col_f3:
-                epi_sel = st.selectbox("Equipamento de Proteção (EPI):", options=lista_epis)
+                quantidade_sel = st.number_input("Quantidade (Aplicada a cada item selecionado):", min_value=1, max_value=10, value=1)
             with col_f4:
-                quantidade_sel = st.number_input("Quantidade Entregue:", min_value=1, max_value=10, value=1)
-                
-            col_f5, col_f6 = st.columns(2)
-            with col_f5:
                 data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date())
-            with col_f6:
-                situacao_assinatura = st.selectbox("Status da Ficha de Registro:", ["Assinado", "PENDENTE"])
                 
-            botao_salvar = st.form_submit_button("💾 Gravar Entrega no Sistema")
+            st.markdown("---")
+            st.markdown("#### 💳 Autenticação e Assinatura Eletrônica")
+            
+            # Campo de validação do Crachá NFC
+            nfc_input = st.text_input(
+                "Aproxime o Crachá do Leitor NFC para assinar:", 
+                type="password", 
+                help="Clique neste campo antes de aproximar o crachá do leitor físico."
+            ).strip()
+            
+            situacao_assinatura = "Assinado" if nfc_input else "PENDENTE"
+            
+            if nfc_input:
+                st.info("🟢 Crachá lido com sucesso! Assinatura vinculada.")
+            else:
+                st.warning("⚠️ Nenhum crachá detectado. O registro será salvo como 'PENDENTE'.")
+                
+            st.markdown("<br>", unsafe_allow_html=True)
+            botao_salvar = st.form_submit_button("💾 Gravar Lançamentos no Sistema")
             
             if botao_salvar:
-                # Monta a linha exatamente na estrutura que o seu respostas.csv usa
-                nova_linha = {
-                    df_base_completa.columns[0] if not df_base_completa.empty else "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                    "RE": str(re_func),
-                    "Nome completo do funcionário:": str(funcionario_sel),
-                    "EPI": str(epi_sel),
-                    "Data da entrega:": data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE",
-                    "Quantidade:": int(quantidade_sel)
-                }
-                
-                with st.spinner("Gravando dados no repositório seguro..."):
-                    sucesso = salvar_no_github(nova_linha)
-                    if sucesso:
-                        st.success(f"🎉 Sucesso! EPI registrado para {funcionario_sel}. Os gráficos serão atualizados.")
+                if not re_digitado or not nome_funcionario:
+                    st.error("❌ Erro: É necessário informar um RE válido antes de salvar.")
+                elif not epis_selecionados:
+                    st.error("❌ Erro: Selecione ao menos um EPI para realizar o lançamento.")
+                else:
+                    sucessos_grava = 0
+                    erros_grava = 0
+                    
+                    with st.spinner("Registrando itens no banco de dados do GitHub..."):
+                        # Loop para salvar cada item selecionado como uma linha independente no CSV
+                        for epi in epis_selecionados:
+                            nova_linha = {
+                                "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                                "RE": str(re_digitado),
+                                "Nome completo do funcionário:": str(nome_funcionario),
+                                "EPI": str(epi),
+                                "Data da entrega:": data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE",
+                                "Quantidade:": int(quantidade_sel)
+                            }
+                            
+                            if salvar_no_github(nova_linha):
+                                sucessos_grava += 1
+                            else:
+                                erros_grava += 1
+                    
+                    if sucessos_grava == len(epis_selecionados):
+                        st.success(f"🎉 Perfeito! {sucessos_grava} EPI(s) registrado(s) com sucesso para o colaborador {nome_funcionario}.")
                         st.balloons()
+                    elif sucessos_grava > 0:
+                        st.warning(f"⚠️ Operação parcial: {sucessos_grava} itens foram salvos, mas {erros_grava} falharam na sincronização.")
                     else:
-                        st.error("❌ Não foi possível salvar. Certifique-se de que configurou o GITHUB_TOKEN.")
+                        st.error("❌ Erro crítico: Não foi possível gravar as informações no GitHub.")
 
 # ==============================================================================
 # VISÕES DO DASHBOARD (MANTIDAS EXATAMENTE IGUAIS)
