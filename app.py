@@ -11,7 +11,7 @@ st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 # CONFIGURAÇÕES DE ACESSO AOS ARQUIVOS REPOSITÓRIO (GITHUB)
 # ==============================================================================
 # IMPORTANTE: Altere para os dados exatos do seu GitHub se forem diferentes
-GITHUB_USER = "seu-usuario-do-github"  # Mude para o seu nome de usuário do GitHub
+GITHUB_USER = "semasahst"  # Mude para o seu nome de usuário do GitHub
 GITHUB_REPO = "sistema-epi"
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "") # Chave de segurança que vamos configurar
 
