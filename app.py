@@ -13,7 +13,7 @@ URL_FUNCIONARIOS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIM
 URL_EPIS = "https://docs.google.com/spreadsheets/d/1vL-5EqVshfUAmJY-3DIMfRpxtgFCvD5TaNLCxU4BPUE/export?format=csv&gid=754637684"
 
 # URL do seu Formulário Google (Google Forms) para a aba de lançamentos
-URL_FORMULARIO_GOOGLE = "https://docs.google.com/forms/d/e/1FAIpQLSclZzUu_8Vep32rUv3X3G7Lz9m9i8FjL9_x-zP3XbA_Y_VnSg/viewform?embedded=true"
+URL_FORMULARIO_GOOGLE = "https://docs.google.com/forms/d/e/1FAIpQLSfRZgRoIfEHUuanvhsMpkfXMSo7BslH_9Oj16nBNhIgSEw0Fg/viewform?usp=header"
 
 # ==============================================================================
 # CARREGAMENTO DOS DADOS OPERACIONAIS COM SISTEMA DE TRATAMENTO DE ERROS
