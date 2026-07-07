@@ -173,72 +173,58 @@ def construir_base_alertas():
 df_base_completa = construir_base_alertas()
 
 # ==============================================================================
-# FUNÇÃO AUXILIAR: GERADOR DE PDF DA FICHA DE EPI (NORMA NR-6)
+# CEREJA DO BOLO 🍒 - VISÃO 3: GERAR FICHA OFICIAL DE EPI PARA IMPRESSÃO/SALVAMENTO
 # ==============================================================================
-def gerar_pdf_ficha(re_func, nome_func, depto_func, df_itens):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
-    story = []
+elif menu == "📄 Gerar Ficha de EPI (Impressão)":
+    st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
+    st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável em PDF.")
     
-    styles = getSampleStyleSheet()
-    style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], alignment=1, fontSize=16, spaceAfter=15)
-    style_texto = ParagraphStyle('Texto', parent=styles['Normal'], fontSize=10, leading=14)
-    style_termo = ParagraphStyle('Termo', parent=styles['Normal'], fontSize=8, leading=11, alignment=4)
+    re_exportar = st.text_input("Digite o RE do Colaborador:").strip()
     
-    # Cabeçalho da Ficha
-    story.append(Paragraph("<b>SEMASA - SERVIÇO MUNICIPAL DE SANEAMENTO AMBIENTAL</b>", style_titulo))
-    story.append(Paragraph("<b>FICHA DE REGISTRO DE ENTREGA DE EPIs (NR-6)</b>", style_titulo))
-    story.append(Spacer(1, 10))
-    
-    # Dados do Trabalhador
-    dados_colaborador = f"""
-    <b>Colaborador:</b> {nome_func} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>RE:</b> {re_func}<br/>
-    <b>Departamento / Setor:</b> {depto_func} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Data de Emissão da Ficha:</b> {datetime.now().strftime('%d/%m/%Y')}
-    """
-    story.append(Paragraph(dados_colaborador, style_texto))
-    story.append(Spacer(1, 15))
-    
-    # Termo de Responsabilidade Legal
-    termo_legal = """
-    Declaro que recebi da SEMASA, gratuitamente, os Equipamentos de Proteção Individual (EPIs) constantes nesta ficha, 
-    adequados ao risco das minhas atividades. Comprometo-me a utilizá-los corretamente durante as jornadas de trabalho, 
-    zelar pela sua guarda e conservação, e comunicar imediatamente ao setor de Segurança do Trabalho qualquer alteração 
-    que o torne impróprio para o uso, estando ciente de que o descumprimento desta norma constitui ato faltoso, conforme 
-    artigo 158 da CLT e a Norma Regulamentadora NR-6.
-    """
-    story.append(Paragraph(f"<i>{termo_legal}</i>", style_termo))
-    story.append(Spacer(1, 15))
-    
-    # Tabela de Itens Entregues
-    tabela_dados = [["EPI / Descrição", "C.A.", "Qtd", "Data Entrega", "Forma de Assinatura"]]
-    for _, row in df_itens.iterrows():
-        dt_str = row['Data Entrega'].strftime('%d/%m/%Y') if isinstance(row['Data Entrega'], datetime) else str(row['Data Entrega'])
-        tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "⚠️ PENDENTE (Assinar à caneta)"
-        tabela_dados.append([row['EPI'], row['CA'], str(row['Qtd']), dt_str, tipo_ass])
-        
-    t = Table(tabela_dados, colWidths=[220, 60, 40, 80, 140])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.grey),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,1), (0,-1), 'LEFT'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('BACKGROUND', (0,1), (-1,-1), colors.beige),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-    ]))
-    story.append(t)
-    story.append(Spacer(1, 40))
-    
-    # Campos de Assinatura no rodapé
-    story.append(Paragraph("____________________________________________________", style_titulo))
-    story.append(Paragraph(f"Assinatura do Colaborador: {nome_func}", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, fontSize=10)))
-    
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
+    if re_exportar:
+        if df_func.empty:
+            st.error("❌ Não foi possível carregar a tabela de funcionários para validação.")
+        else:
+            # 1. Busca o funcionário diretamente na planilha funcionarios.csv usando o RE limpo
+            df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
+            re_busca_limpo = re_exportar.split('.')[0].strip()
+            
+            f_match = df_func_limpo[df_func_limpo.iloc[:, 0].astype(str).str.split('.').str[0].str.strip() == re_busca_limpo]
+            
+            if f_match.empty:
+                st.error(f"❌ O RE {re_exportar} não foi localizado no cadastro de funcionários.")
+            else:
+                # Recupera os dados oficiais do cadastro
+                nome_oficial = str(f_match.iloc[0, 1]).strip()
+                depto_oficial = str(f_match.iloc[0, 2]).strip()
+                
+                # 2. Filtra o histórico de EPIs comparando o nome de forma tolerante (sem espaços e sem case-sensitive)
+                if df_base_completa.empty:
+                    st.info("Nenhum histórico geral de EPIs encontrado no sistema.")
+                else:
+                    df_historico_func = df_base_completa[df_base_completa['Funcionário'].str.strip().str.upper() == nome_oficial.upper()]
+                    
+                    if df_historico_func.empty:
+                        st.warning(f"📋 Funcionário localizado: **{nome_oficial}** ({depto_oficial}), mas ele ainda não possui nenhuma entrega registrada na planilha de respostas.")
+                    else:
+                        st.success(f"👤 **Funcionário localizado:** {nome_oficial} | **Setor:** {depto_oficial}")
+                        st.markdown("### Itens que constarão no documento:")
+                        
+                        # Exibe o preview formatado na tela
+                        df_preview = df_historico_func[["EPI", "CA", "Qtd", "Data Entrega", "Assinatura"]].copy()
+                        df_preview["Data Entrega"] = df_preview["Data Entrega"].dt.strftime("%d/%m/%Y")
+                        st.dataframe(df_preview, use_container_width=True)
+                        
+                        st.markdown("---")
+                        # Gera e disponibiliza o PDF para download usando os dados limpos
+                        pdf_data = gerar_pdf_ficha(re_exportar, nome_oficial, depto_oficial, df_historico_func)
+                        
+                        st.download_button(
+                            label="📥 Baixar Ficha de EPI Oficial (PDF)",
+                            data=pdf_data,
+                            file_name=f"Ficha_EPI_{re_exportar}_{nome_oficial.replace(' ', '_')}.pdf",
+                            mime="application/pdf"
+                        )
 # ==============================================================================
 # MENU LATERAL INTERATIVO
 # ==============================================================================
