@@ -34,7 +34,7 @@ def buscar_dados_planilhas():
 df_func, df_epis = buscar_dados_planilhas()
 
 # ==============================================================================
-# FUNÇÃO MASTER DE GRAVAÇÃO UNIFICADA (BLINDA CONTRA ERRO 409)
+# FUNÇÃO MASTER DE GRAVAÇÃO UNIFICADA (ALINHADA COM A PLANILHA REAL)
 # ==============================================================================
 def salvar_lote_no_github(novas_linhas_lista):
     if not GITHUB_TOKEN:
@@ -49,10 +49,10 @@ def salvar_lote_no_github(novas_linhas_lista):
         dados_repo = req_get.json()
         sha_arquivo = dados_repo['sha']
         conteudo_antigo = base64.b64decode(dados_repo['content']).decode('utf-8')
-        df_atual = pd.read_csv(io.StringIO(conteudo_antigo), dtype=str)
+        df_atual = pd.read_csv(io.StringIO(conteudo_antigo), header=None, dtype=str)
     else:
         try:
-            df_atual = pd.read_csv(URL_RESPOSTAS, dtype=str)
+            df_atual = pd.read_csv(URL_RESPOSTAS, header=None, dtype=str)
             sha_arquivo = ""
         except:
             return False
@@ -60,7 +60,7 @@ def salvar_lote_no_github(novas_linhas_lista):
     df_novas = pd.DataFrame(novas_linhas_lista)
     df_final = pd.concat([df_atual, df_novas], ignore_index=True)
     
-    csv_string = df_final.to_csv(index=False)
+    csv_string = df_final.to_csv(index=False, header=False)
     conteudo_base64 = base64.b64encode(csv_string.encode('utf-8')).decode('utf-8')
     
     payload = {
@@ -81,7 +81,7 @@ def atualizar_csv_completo(df_novo):
     req_get = requests.get(url_api, headers=headers)
     if req_get.status_code == 200:
         sha_arquivo = req_get.json()['sha']
-        csv_string = df_novo.to_csv(index=False)
+        csv_string = df_novo.to_csv(index=False, header=False)
         conteudo_base64 = base64.b64encode(csv_string.encode('utf-8')).decode('utf-8')
         payload = {"message": "Baixa em assinaturas pendentes", "content": conteudo_base64, "sha": sha_arquivo}
         req_put = requests.put(url_api, headers=headers, json=payload)
@@ -89,24 +89,18 @@ def atualizar_csv_completo(df_novo):
     return False
 
 # ==============================================================================
-# CONSTRUÇÃO DA BASE DE ALERTAS (CORRIGIDA PARA TRATAR O STATUS PENDENTE)
+# CONSTRUÇÃO DA BASE DE ALERTAS COM MAPEAMENTO CIRÚRGICO DAS COLUNAS REALISTAS
 # ==============================================================================
 def construir_base_alertas():
     try:
-        df_hist = pd.read_csv(URL_RESPOSTAS, dtype=str).dropna(how='all')
+        # Lê sem cabeçalho para garantir precisão pelos índices das colunas reais
+        df_hist = pd.read_csv(URL_RESPOSTAS, header=None, dtype=str).dropna(how='all')
     except:
         return pd.DataFrame()
         
     if df_hist.empty:
         return pd.DataFrame()
         
-    col_timestamp = df_hist.columns[0]
-    col_re = df_hist.columns[1]
-    col_func = df_hist.columns[2]
-    col_epi = df_hist.columns[3]
-    col_data = df_hist.columns[4]
-    col_qtd = df_hist.columns[5]
-
     linhas_processadas = []
     hoje = pd.to_datetime(datetime.now().date())
     
@@ -116,33 +110,28 @@ def construir_base_alertas():
         mapa_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
         mapa_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
+    # Mapeamento com base estrita no layout visual do GitHub enviado pelo usuário
     for idx, row in df_hist.iterrows():
-        re_val = str(row[col_re]).strip()
-        nome_func = str(row[col_func]).strip()
-        nome_epi = str(row[col_epi]).strip()
-        qtd_val = str(row[col_qtd]).strip()
-        raw_timestamp = str(row[col_timestamp]).strip()
-        raw_data_entrega = str(row[col_data]).strip()
+        if len(row) < 6:
+            continue
+            
+        nome_epi = str(row.iloc[1]).strip()       # Coluna B
+        nome_func = str(row.iloc[4]).strip()      # Coluna E
+        raw_data_entrega = str(row.iloc[5]).strip() # Coluna F (Onde está gravado "PENDENTE" ou a data)
         
-        if not re_val or re_val == 'nan' or re_val == '':
+        if not nome_func or nome_func == 'nan' or nome_func == '':
             continue
 
-        # Correção aqui: Verifica se está pendente independente de onde esteja escrito
-        if "PENDENTE" in raw_data_entrega.upper() or "PENDENTE" in raw_timestamp.upper():
+        # Identificação precisa do status pendente
+        if "PENDENTE" in raw_data_entrega.upper():
             status_assinatura = "Pendente"
-            # Se a data está como PENDENTE, extrai a data do Carimbo de data/hora para não bugar o filtro do Streamlit
-            if len(raw_timestamp) >= 10:
-                raw_data_entrega_limpa = raw_timestamp.split()[0] # Pega o "DD/MM/AAAA" do timestamp
-            else:
-                raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
+            raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
         else:
             status_assinatura = "Assinado"
             raw_data_entrega_limpa = raw_data_entrega
             
-        # Converte de forma segura tratando formato brasileiro (dayfirst=True)
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega_limpa, errors='coerce', dayfirst=True)
         if pd.isnull(dt_entrega_parsed):
-            # Fallback secundário se der erro de conversão americana/brasileira
             dt_entrega_parsed = pd.to_datetime(raw_data_entrega_limpa, errors='coerce')
             if pd.isnull(dt_entrega_parsed):
                 dt_entrega_parsed = hoje
@@ -153,26 +142,23 @@ def construir_base_alertas():
         dias_restantes = (dt_vencimento - hoje).days
         status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
+        # Faz a busca reversa do RE pelo Nome do Funcionário cadastrado na base funcionarios.csv
+        re_vinculado = "N/A"
         departamento = "Não Informado"
         if not df_func.empty:
-            re_limpo_busca = re_val.split('.')[0].strip()
-            f_match = df_func[df_func.iloc[:, 0].astype(str).str.split('.').str[0].str.strip() == re_limpo_busca]
-            if not f_match.empty: 
+            f_match = df_func[df_func.iloc[:, 1].astype(str).str.strip().str.upper() == nome_func.upper()]
+            if not f_match.empty:
+                re_vinculado = str(f_match.iloc[0, 0]).split('.')[0].strip()
                 departamento = str(f_match.iloc[0, 2]).strip()
-        
-        try:
-            quantidade = int(float(qtd_val))
-        except:
-            quantidade = 1
         
         linhas_processadas.append({
             "INDEX_ORIGINAL": idx,
-            "RE": re_val.split('.')[0].strip(),
+            "RE": re_vinculado,
             "Funcionário": nome_func, 
             "Departamento": departamento,
             "EPI": nome_epi, 
             "CA": mapa_ca.get(nome_epi, "N/A"), 
-            "Qtd": quantidade,
+            "Qtd": 1,
             "Data Entrega": dt_entrega_parsed, 
             "Data Vencimento": dt_vencimento,
             "Dias Restantes": dias_restantes, 
@@ -194,7 +180,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO 1: LANÇAMENTO COM TRAVA E DATA SEGURA
+# VISÃO 1: LANÇAMENTO COM REVERÇÃO E ENCAIXE EXATO DE COLUNAS
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
     st.header("📝 Registro de Entrega de Equipamentos de Proteção")
@@ -232,53 +218,47 @@ if menu == "📝 Lançar Novos EPIs":
                 cracha_esperado = mapa_re_cracha.get(re_digitado, "")
                 if nfc_input == cracha_esperado:
                     situacao_assinatura = "Assinado"
-                    st.success("🟢 Crachá validado com sucesso! Assinatura legítima vinculada.")
+                    st.success("🟢 Crachá validado com sucesso!")
                 else:
                     dono_desse_cracha = mapa_cracha_nome.get(nfc_input, "Desconhecido")
-                    st.error(f"❌ Bloqueado por Segurança: Este crachá pertence a '{dono_desse_cracha}' e NÃO ao colaborador do RE digitado! O registro ficará PENDENTE.")
+                    st.error(f"❌ Este crachá pertence a '{dono_desse_cracha}'! Registro ficará PENDENTE.")
         else:
             st.info("ℹ️ Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
             
         st.markdown("---")
-        
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
-        
-        col_f3, col_f4 = st.columns(2)
-        with col_f3: 
-            quantidade_sel = st.number_input("Quantidade (Por item):", min_value=1, value=1, key="qtd_usuario")
-        with col_f4: 
-            data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
+        data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
             
         st.markdown("<br>", unsafe_allow_html=True)
         botao_salvar = st.button("💾 Gravar Lançamentos no Sistema")
         
         if botao_salvar:
             if not re_digitado or not nome_funcionario:
-                st.error("❌ RE inválido. Digite um RE válido antes de salvar.")
+                st.error("❌ Digite um RE válido antes de salvar.")
             elif not epis_selecionados:
                 st.error("❌ Selecione ao menos um EPI.")
             else:
                 lote_linhas = []
                 for epi in epis_selecionados:
+                    # Monta o registro de forma cirúrgica para encaixar nas colunas A, B, C, D, E, F do repositório
                     lote_linhas.append({
-                        "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        "RE": str(re_digitado),
-                        "Nome completo do funcionário:": str(nome_funcionario),
-                        "EPI": str(epi),
-                        # ATENÇÃO: Se for assinado grava a data, se for bypass, deixa claro como PENDENTE
-                        "Data da entrega:": data_entrega_sel.strftime("%d/%m/%Y") if situacao_assinatura == "Assinado" else "PENDENTE",
-                        "Quantidade:": int(quantidade_sel)
+                        0: "",                                                                       # Coluna A (Vazia)
+                        1: str(epi),                                                                 # Coluna B (EPI)
+                        2: "",                                                                       # Coluna C (Vazia)
+                        3: "",                                                                       # Coluna D (Vazia)
+                        4: str(nome_funcionario),                                                    # Coluna E (Funcionário)
+                        5: data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE" # Coluna F (Status/Data)
                     })
                 
                 with st.spinner("Salvando lote no GitHub..."):
                     if salvar_lote_no_github(lote_linhas):
-                        st.success(f"🎉 Sucesso! {len(epis_selecionados)} item(ns) gravado(s) para {nome_funcionario} (Status: {situacao_assinatura}).")
+                        st.success(f"🎉 Gravado com sucesso para {nome_funcionario}!")
                         st.balloons()
                     else:
-                        st.error("❌ Erro ao salvar no repositório do GitHub.")
+                        st.error("❌ Erro ao salvar no GitHub.")
 
 # ==============================================================================
-# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS COM PARSER CORRIGIDO
+# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE FILTRADO VIA SELEÇÃO MAPEADA
 # ==============================================================================
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Regularização de Assinaturas Pendentes")
@@ -296,8 +276,6 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 st.success("🎉 Este colaborador não possui nenhuma assinatura pendente no sistema!")
             else:
                 st.warning(f"📋 Encontradas {len(df_pendentes_func)} entregas pendentes para este RE:")
-                
-                # Exibição limpa
                 df_exibir = df_pendentes_func[["EPI", "Qtd", "Data Entrega"]].copy()
                 df_exibir["Data Entrega"] = df_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_exibir, use_container_width=True)
@@ -314,7 +292,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                     
                     if nfc_baixa != cracha_correto:
                         dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
-                        st.error(f"❌ Bloqueado: Este crachá pertence a '{dono_desse_cracha}' e NÃO ao colaborador deste RE. Ação cancelada por segurança.")
+                        st.error(f"❌ Bloqueado: Este crachá pertence a '{dono_desse_cracha}'!")
                     else:
                         with st.spinner("Processando assinaturas legítimas..."):
                             try:
@@ -324,24 +302,25 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                 
                                 if req_get.status_code == 200:
                                     conteudo_bruto = base64.b64decode(req_get.json()['content']).decode('utf-8')
-                                    df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), dtype=str)
+                                    df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), header=None, dtype=str)
                                     
                                     indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
-                                    data_hoje_str = datetime.now().strftime("%d/%m/%Y") # Formato brasileiro padrão
+                                    data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                     
                                     for idx_orig in indices_para_alterar:
-                                        df_raw_csv.iloc[int(idx_orig), 4] = data_hoje_str
+                                        # Sobrescreve especificamente a Coluna F (Índice 5) onde estava escrito PENDENTE
+                                        df_raw_csv.iloc[int(idx_orig), 5] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
-                                        st.success(f"🎉 Perfeito! {len(indices_para_alterar)} pendências eliminadas e assinadas por aproximação!")
+                                        st.success(f"🎉 Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
                                         st.balloons()
                                     else:
-                                        st.error("Erro ao salvar as assinaturas no GitHub.")
+                                        st.error("Erro ao salvar no GitHub.")
                             except Exception as ex:
-                                st.error(f"Falha técnica no processo: {ex}")
+                                st.error(f"Falha técnica: {ex}")
 
 # ==============================================================================
-# VISÕES DO DASHBOARD
+# VISÕES DO DASHBOARD E ALERTAS
 # ==============================================================================
 else:
     if df_base_completa.empty:
