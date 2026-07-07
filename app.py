@@ -57,7 +57,6 @@ def salvar_lote_no_github(novas_linhas_lista):
         except:
             return False
 
-    # Concatena todas as novas linhas de uma única vez
     df_novas = pd.DataFrame(novas_linhas_lista)
     df_final = pd.concat([df_atual, df_novas], ignore_index=True)
     
@@ -117,7 +116,6 @@ def construir_base_alertas():
         mapa_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
         mapa_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
-    # Adicionado index_original para rastrear a linha exata em caso de baixa posterior
     for idx, row in df_hist.iterrows():
         re_val = str(row[col_re]).strip()
         nome_func = str(row[col_func]).strip()
@@ -187,7 +185,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# VISÃO 1: LANÇAMENTO COM OPÇÃO DE BYPASS
+# VISÃO 1: LANÇAMENTO COM PERSISTÊNCIA DE MEMÓRIA (RE NÃO SOME)
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
     st.header("📝 Registro de Entrega de Equipamentos de Proteção")
@@ -214,46 +212,51 @@ if menu == "📝 Lançar Novos EPIs":
             
         st.markdown("---")
         
-        with st.form("form_lancamento_avancado", clear_on_submit=True):
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                re_digitado = st.text_input("Digite o número do RE:").strip()
-            with col_f2:
-                nome_funcionario = mapa_re_nome.get(re_digitado, "")
-                if re_digitado and not nome_funcionario: st.error("❌ RE não localizado.")
-                elif re_digitado and nome_funcionario: st.info(f"👤 Colaborador: {nome_funcionario}")
+        # REMOVIDO O 'with st.form' para evitar que o refresh limpe os inputs na tela
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            re_digitado = st.text_input("Digite o número do RE:", key="re_usuario").strip()
+        with col_f2:
+            nome_funcionario = mapa_re_nome.get(re_digitado, "")
+            if re_digitado and not nome_funcionario: 
+                st.error("❌ RE não localizado.")
+            elif re_digitado and nome_funcionario: 
+                st.info(f"👤 Colaborador: {nome_funcionario}")
+        
+        epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
+        
+        col_f3, col_f4 = st.columns(2)
+        with col_f3: 
+            quantidade_sel = st.number_input("Quantidade (Por item):", min_value=1, value=1, key="qtd_usuario")
+        with col_f4: 
+            data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
             
-            epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis)
-            
-            col_f3, col_f4 = st.columns(2)
-            with col_f3: quantidade_sel = st.number_input("Quantidade (Por item):", min_value=1, value=1)
-            with col_f4: data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date())
+        st.markdown("<br>", unsafe_allow_html=True)
+        botao_salvar = st.button("💾 Gravar Lançamentos no Sistema")
+        
+        if botao_salvar:
+            if not re_digitado or not nome_funcionario:
+                st.error("❌ RE inválido. Digite um RE válido antes de salvar.")
+            elif not epis_selecionados:
+                st.error("❌ Selecione ao menos um EPI.")
+            else:
+                lote_linhas = []
+                for epi in epis_selecionados:
+                    lote_linhas.append({
+                        "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "RE": str(re_digitado),
+                        "Nome completo do funcionário:": str(nome_funcionario),
+                        "EPI": str(epi),
+                        "Data da entrega:": data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE",
+                        "Quantidade:": int(quantidade_sel)
+                    })
                 
-            botao_salvar = st.form_submit_button("💾 Gravar Lançamentos no Sistema")
-            
-            if botao_salvar:
-                if not re_digitado or not nome_funcionario:
-                    st.error("❌ RE inválido.")
-                elif not epis_selecionados:
-                    st.error("❌ Selecione ao menos um EPI.")
-                else:
-                    lote_linhas = []
-                    for epi in epis_selecionados:
-                        lote_linhas.append({
-                            "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                            "RE": str(re_digitado),
-                            "Nome completo do funcionário:": str(nome_funcionario),
-                            "EPI": str(epi),
-                            "Data da entrega:": data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE",
-                            "Quantidade:": int(quantidade_sel)
-                        })
-                    
-                    with st.spinner("Salvando lote no GitHub..."):
-                        if salvar_lote_no_github(lote_linhas):
-                            st.success(f"🎉 Sucesso! {len(epis_selecionados)} item(ns) gravado(s) para {nome_funcionario}.")
-                            st.balloons()
-                        else:
-                            st.error("❌ Erro ao salvar.")
+                with st.spinner("Salvando lote no GitHub..."):
+                    if salvar_lote_no_github(lote_linhas):
+                        st.success(f"🎉 Sucesso! {len(epis_selecionados)} item(ns) gravado(s) para {nome_funcionario}.")
+                        st.balloons()
+                    else:
+                        st.error("❌ Erro ao salvar no repositório do GitHub.")
 
 # ==============================================================================
 # VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS VIA NFC (BAIXA EM LOTE)
@@ -280,9 +283,8 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 nfc_baixa = st.text_input("APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", type="password").strip()
                 
                 if nfc_baixa:
-                    with st.spinner("Processando assinaturas e atualizando banco de dados..."):
+                    with st.spinner("Processando assinaturas e updating banco de dados..."):
                         try:
-                            # Baixa o CSV bruto original direto do GitHub para alterar as células certas
                             url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
                             headers = {"Authorization": f"token {GITHUB_TOKEN}"}
                             req_get = requests.get(url_api, headers=headers)
@@ -291,7 +293,6 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                 conteudo_bruto = base64.b64decode(req_get.json()['content']).decode('utf-8')
                                 df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), dtype=str)
                                 
-                                # Altera as linhas correspondentes trocando 'PENDENTE' pela data de hoje
                                 indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
                                 data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                 
@@ -307,7 +308,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                             st.error(f"Falha técnica no processo: {ex}")
 
 # ==============================================================================
-# VISÕES DO DASHBOARD (MANTIDAS EXATAMENTE IGUAIS)
+# VISÕES DO DASHBOARD
 # ==============================================================================
 else:
     if df_base_completa.empty:
