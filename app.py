@@ -5,6 +5,12 @@ import requests
 import base64
 import io
 
+# Importações para a geração do PDF da Ficha de EPI
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 # Configuração global da página do Streamlit
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
@@ -93,7 +99,6 @@ def atualizar_csv_completo(df_novo):
 # ==============================================================================
 def construir_base_alertas():
     try:
-        # Lê sem cabeçalho para garantir precisão pelos índices das colunas reais
         df_hist = pd.read_csv(URL_RESPOSTAS, header=None, dtype=str).dropna(how='all')
     except:
         return pd.DataFrame()
@@ -110,19 +115,17 @@ def construir_base_alertas():
         mapa_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
         mapa_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
-    # Mapeamento com base estrita no layout visual do GitHub enviado pelo usuário
     for idx, row in df_hist.iterrows():
         if len(row) < 6:
             continue
             
-        nome_epi = str(row.iloc[1]).strip()       # Coluna B
-        nome_func = str(row.iloc[4]).strip()      # Coluna E
-        raw_data_entrega = str(row.iloc[5]).strip() # Coluna F (Onde está gravado "PENDENTE" ou a data)
+        nome_epi = str(row.iloc[1]).strip()       
+        nome_func = str(row.iloc[4]).strip()      
+        raw_data_entrega = str(row.iloc[5]).strip() 
         
         if not nome_func or nome_func == 'nan' or nome_func == '':
             continue
 
-        # Identificação precisa do status pendente
         if "PENDENTE" in raw_data_entrega.upper():
             status_assinatura = "Pendente"
             raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
@@ -142,7 +145,6 @@ def construir_base_alertas():
         dias_restantes = (dt_vencimento - hoje).days
         status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
         
-        # Faz a busca reversa do RE pelo Nome do Funcionário cadastrado na base funcionarios.csv
         re_vinculado = "N/A"
         departamento = "Não Informado"
         if not df_func.empty:
@@ -171,12 +173,85 @@ def construir_base_alertas():
 df_base_completa = construir_base_alertas()
 
 # ==============================================================================
+# FUNÇÃO AUXILIAR: GERADOR DE PDF DA FICHA DE EPI (NORMA NR-6)
+# ==============================================================================
+def gerar_pdf_ficha(re_func, nome_func, depto_func, df_itens):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], alignment=1, fontSize=16, spaceAfter=15)
+    style_texto = ParagraphStyle('Texto', parent=styles['Normal'], fontSize=10, leading=14)
+    style_termo = ParagraphStyle('Termo', parent=styles['Normal'], fontSize=8, leading=11, alignment=4)
+    
+    # Cabeçalho da Ficha
+    story.append(Paragraph("<b>SEMASA - SERVIÇO MUNICIPAL DE SANEAMENTO AMBIENTAL</b>", style_titulo))
+    story.append(Paragraph("<b>FICHA DE REGISTRO DE ENTREGA DE EPIs (NR-6)</b>", style_titulo))
+    story.append(Spacer(1, 10))
+    
+    # Dados do Trabalhador
+    dados_colaborador = f"""
+    <b>Colaborador:</b> {nome_func} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>RE:</b> {re_func}<br/>
+    <b>Departamento / Setor:</b> {depto_func} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Data de Emissão da Ficha:</b> {datetime.now().strftime('%d/%m/%Y')}
+    """
+    story.append(Paragraph(dados_colaborador, style_texto))
+    story.append(Spacer(1, 15))
+    
+    # Termo de Responsabilidade Legal
+    termo_legal = """
+    Declaro que recebi da SEMASA, gratuitamente, os Equipamentos de Proteção Individual (EPIs) constantes nesta ficha, 
+    adequados ao risco das minhas atividades. Comprometo-me a utilizá-los corretamente durante as jornadas de trabalho, 
+    zelar pela sua guarda e conservação, e comunicar imediatamente ao setor de Segurança do Trabalho qualquer alteração 
+    que o torne impróprio para o uso, estando ciente de que o descumprimento desta norma constitui ato faltoso, conforme 
+    artigo 158 da CLT e a Norma Regulamentadora NR-6.
+    """
+    story.append(Paragraph(f"<i>{termo_legal}</i>", style_termo))
+    story.append(Spacer(1, 15))
+    
+    # Tabela de Itens Entregues
+    tabela_dados = [["EPI / Descrição", "C.A.", "Qtd", "Data Entrega", "Forma de Assinatura"]]
+    for _, row in df_itens.iterrows():
+        dt_str = row['Data Entrega'].strftime('%d/%m/%Y') if isinstance(row['Data Entrega'], datetime) else str(row['Data Entrega'])
+        tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "⚠️ PENDENTE (Assinar à caneta)"
+        tabela_dados.append([row['EPI'], row['CA'], str(row['Qtd']), dt_str, tipo_ass])
+        
+    t = Table(tabela_dados, colWidths=[220, 60, 40, 80, 140])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.grey),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,1), (-1,-1), colors.beige),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 40))
+    
+    # Campos de Assinatura no rodapé
+    story.append(Paragraph("____________________________________________________", style_titulo))
+    story.append(Paragraph(f"Assinatura do Colaborador: {nome_func}", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, fontSize=10)))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# ==============================================================================
 # MENU LATERAL INTERATIVO
 # ==============================================================================
 st.sidebar.markdown("## 🧭 Navegação Sistema")
 menu = st.sidebar.selectbox(
     "Escolha a Visão:", 
-    ["📝 Lançar Novos EPIs", "✍️ Coletar Assinaturas Pendentes", "📊 Dashboard de Gestão", "⚠️ EPIs Vencidos/A Vencer"]
+    [
+        "📝 Lançar Novos EPIs", 
+        "✍️ Coletar Assinaturas Pendentes", 
+        "📄 Gerar Ficha de EPI (Impressão)", 
+        "📊 Dashboard de Gestão", 
+        "⚠️ EPIs Vencidos/A Vencer"
+    ]
 )
 
 # ==============================================================================
@@ -240,14 +315,13 @@ if menu == "📝 Lançar Novos EPIs":
             else:
                 lote_linhas = []
                 for epi in epis_selecionados:
-                    # Monta o registro de forma cirúrgica para encaixar nas colunas A, B, C, D, E, F do repositório
                     lote_linhas.append({
-                        0: "",                                                                       # Coluna A (Vazia)
-                        1: str(epi),                                                                 # Coluna B (EPI)
-                        2: "",                                                                       # Coluna C (Vazia)
-                        3: "",                                                                       # Coluna D (Vazia)
-                        4: str(nome_funcionario),                                                    # Coluna E (Funcionário)
-                        5: data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE" # Coluna F (Status/Data)
+                        0: "",                                                                       
+                        1: str(epi),                                                                 
+                        2: "",                                                                       
+                        3: "",                                                                       
+                        4: str(nome_funcionario),                                                    
+                        5: data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE" 
                     })
                 
                 with st.spinner("Salvando lote no GitHub..."):
@@ -258,7 +332,7 @@ if menu == "📝 Lançar Novos EPIs":
                         st.error("❌ Erro ao salvar no GitHub.")
 
 # ==============================================================================
-# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE FILTRADO VIA SELEÇÃO MAPEADA
+# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE
 # ==============================================================================
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Regularização de Assinaturas Pendentes")
@@ -294,7 +368,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                         dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
                         st.error(f"❌ Bloqueado: Este crachá pertence a '{dono_desse_cracha}'!")
                     else:
-                        with st.spinner("Processando assinaturas legítimas..."):
+                        with st.spinner("Processando signatures legítimas..."):
                             try:
                                 url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
                                 headers = {"Authorization": f"token {GITHUB_TOKEN}"}
@@ -308,7 +382,6 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                     data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                     
                                     for idx_orig in indices_para_alterar:
-                                        # Sobrescreve especificamente a Coluna F (Índice 5) onde estava escrito PENDENTE
                                         df_raw_csv.iloc[int(idx_orig), 5] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
@@ -318,6 +391,48 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                         st.error("Erro ao salvar no GitHub.")
                             except Exception as ex:
                                 st.error(f"Falha técnica: {ex}")
+
+# ==============================================================================
+# CEREJA DO BOLO 🍒 - VISÃO 3: GERAR FICHA OFICIAL DE EPI PARA IMPRESSÃO/SALVAMENTO
+# ==============================================================================
+elif menu == "📄 Gerar Ficha de EPI (Impressão)":
+    st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
+    st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável em PDF.")
+    
+    re_exportar = st.text_input("Digite o RE do Colaborador:").strip()
+    
+    if re_exportar:
+        if df_base_completa.empty:
+            st.info("Nenhum histórico encontrado para gerar a ficha.")
+        else:
+            # Filtra todas as movimentações históricas daquele funcionário específico
+            df_historico_func = df_base_completa[df_base_completa['RE'] == re_exportar]
+            
+            if df_historico_func.empty:
+                st.error("❌ Nenhum registro de entrega foi localizado para este RE no banco de dados.")
+            else:
+                # Captura metadados do trabalhador
+                nome_candidato = df_historico_func.iloc[0]['Funcionário']
+                depto_candidato = df_historico_func.iloc[0]['Departamento']
+                
+                st.info(f"📋 **Funcionário localizado:** {nome_candidato} | **Setor:** {depto_candidato}")
+                st.markdown("### Itens que constarão no documento:")
+                
+                # Exibe um preview na tela antes de exportar
+                df_preview = df_historico_func[["EPI", "CA", "Qtd", "Data Entrega", "Assinatura"]].copy()
+                df_preview["Data Entrega"] = df_preview["Data Entrega"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_preview, use_container_width=True)
+                
+                st.markdown("---")
+                # Botão Dinâmico que executa a função de criação do PDF e disponibiliza o download
+                pdf_data = gerar_pdf_ficha(re_exportar, nome_candidato, depto_candidato, df_historico_func)
+                
+                st.download_button(
+                    label="📥 Baixar Ficha de EPI Oficial (PDF)",
+                    data=pdf_data,
+                    file_name=f"Ficha_EPI_{re_exportar}_{nome_candidato.replace(' ', '_')}.pdf",
+                    mime="application/pdf"
+                )
 
 # ==============================================================================
 # VISÕES DO DASHBOARD E ALERTAS
