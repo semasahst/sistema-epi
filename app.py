@@ -95,7 +95,7 @@ def atualizar_csv_completo(df_novo):
     return False
 
 # ==============================================================================
-# CONSTRUÇÃO DA BASE DE ALERTAS COM MAPEAMENTO DINÂMICO DE COLUNAS
+# CONSTRUÇÃO DA BASE DE ALERTAS COM REGRA DE ÚLTIMA ENTREGA VIGENTE (CORRIGIDO)
 # ==============================================================================
 def construir_base_alertas():
     try:
@@ -120,7 +120,6 @@ def construir_base_alertas():
         if total_cols < 2:
             continue
             
-        # Tratamento robusto para variações na estrutura de colunas do respostas.csv
         nome_epi = str(row.iloc[0]).strip() if total_cols < 6 else str(row.iloc[1]).strip()
         nome_func = str(row.iloc[4]).strip() if total_cols >= 5 else (str(row.iloc[1]).strip() if total_cols >= 2 else "")
         raw_data_entrega = str(row.iloc[5]).strip() if total_cols >= 6 else (str(row.iloc[2]).strip() if total_cols >= 3 else "PENDENTE")
@@ -145,7 +144,7 @@ def construir_base_alertas():
         dias_validade = mapa_validades.get(nome_epi, 90)
         dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
-        status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
+        status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 days)" if dias_restantes <= 15 else "🟢 Regular")
         
         re_vinculado = "N/A"
         departamento = "Não Informado"
@@ -170,9 +169,18 @@ def construir_base_alertas():
             "Assinatura": status_assinatura
         })
         
-    return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
-
-df_base_completa = construir_base_alertas()
+    df_resultado = pd.DataFrame(linhas_processadas)
+    
+    if not df_resultado.empty:
+        # A MÁGICA ACONTECE AQUI:
+        # 1. Ordena pela data de entrega (da mais antiga para a mais recente)
+        df_resultado = df_resultado.sort_values(by="Data Entrega", ascending=True)
+        
+        # 2. Dropa os duplicados mantendo APENAS o último (last) registro para cada par de Funcionário + EPI
+        # Nota: Mantemos itens 'Pendente' fora do descarte caso o usuário queira assinar antes
+        df_resultado = df_resultado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
+        
+    return df_resultado
 
 # ==============================================================================
 # FUNÇÃO AUXILIAR: GERADOR DE PDF DA FICHA DE EPI (NORMA NR-6)
