@@ -173,6 +173,116 @@ def construir_base_alertas():
 
 # Definição Global da Base do Sistema
 df_base_completa = construir_base_alertas()
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# Dicionário de e-mails para os gestores (ajuste os nomes dos Departamentos e e-mails exatamente como constam no seu sistema)
+MAPA_EMAILS_GESTORES = {
+    "Logística": "gestor.logistica@semasa.com",
+    "Operações": "gestor.operacoes@semasa.com",
+    "Manutenção": "gestor.manutencao@semasa.com",
+    "Administrativo": "gestor.adm@semasa.com",
+    "HST_GERAL": "equipe.hst@semasa.com" # E-mail do HST que recebe o consolidado completo
+}
+
+def enviar_notificacao_email(destinatario, assunto, corpo_html):
+    """Função genérica de disparo de e-mail via SMTP com suporte a HTML."""
+    remetente = st.secrets.get("EMAIL_REMETENTE", "")
+    senha = st.secrets.get("EMAIL_SENHA", "")
+    smtp_server = st.secrets.get("EMAIL_SMTP", "smtp.gmail.com")
+    porta = int(st.secrets.get("EMAIL_PORTA", 587))
+    
+    if not remetente or not senha:
+        return False
+        
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = assunto
+        msg['From'] = remetente
+        msg['To'] = destinatario
+        
+        part = MIMEText(corpo_html, 'html')
+        msg.attach(part)
+        
+        server = smtplib.SMTP(smtp_server, porta)
+        server.starttls()
+        server.login(remetente, senha)
+        server.sendmail(remetente, destinatario, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Erro ao enviar e-mail: {e}")
+        return False
+
+def processar_e_enviar_alertas_mensais(forcar=False):
+    """Varre o sistema e envia e-mails customizados aos gestores e ao HST."""
+    hoje = datetime.now()
+    
+    # Validação de Primeiro Dia Útil do Mês (Caso não seja disparo forçado manual)
+    if not forcar:
+        # Se for sábado (5) ou domingo (6), não roda
+        if hoje.weekday() >= 5:
+            return "Não executado: Fim de semana."
+        # Se for dia 1 e dia de semana, roda. Se for dia 2 ou 3 e segunda-feira, significa que foi o primeiro dia útil.
+        if hoje.day == 1:
+            pass
+        elif hoje.day == 2 and hoje.weekday() == 0: # Segunda-feira pós dia 1 domingo
+            pass
+        elif hoje.day == 3 and hoje.weekday() == 0: # Segunda-feira pós dia 1 sábado
+            pass
+        else:
+            return "Não executado: Hoje não é o primeiro dia útil do mês."
+
+    # Processa os dados de alertas baseados na última entrega ativa
+    df_alertas = construir_base_alertas()
+    if df_alertas.empty:
+        return "Sem alertas para processar."
+        
+    df_alertas = df_alertas.sort_values(by="Data Entrega", ascending=True)
+    df_alertas = df_alertas.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
+    
+    # Filtra apenas o que está Vencido ou Crítico
+    df_problemas = df_alertas[df_alertas['Status'].str.contains("🔴|🟡")]
+    
+    if df_problemas.empty:
+        return "Sucesso: Nenhum EPI vencido ou crítico encontrado este mês!"
+
+    # 1. ENVIAR CONSOLIDADO GERAL PARA A EQUIPE DO HST
+    email_hst = MAPA_EMAILS_GESTORES.get("HST_GERAL", "")
+    if email_hst:
+        linhas_html = "".join([f"<tr><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['Departamento']}</td><td>{r['EPI']}</td><td>{r['Status']}</td></tr>" for _, r in df_problemas.iterrows()])
+        corpo_hst = f"""
+        <h3>📊 Relatório Mensal Consolidado de EPIs - HST SEMASA</h3>
+        <p>Prezada equipe do HST, segue abaixo a listagem de todas as inconformidades ativas no sistema neste momento:</p>
+        <table border='1' cellpadding='5' style='border-collapse: collapse;'>
+            <tr style='background-color: #333; color: white;'><th>RE</th><th>Funcionário</th><th>Departamento</th><th>EPI</th><th>Status</th></tr>
+            {linhas_html}
+        </table>
+        <br><p>Acesse o sistema para mais detalhes.</p>
+        """
+        enviar_notificacao_email(email_hst, "📊 HST: Consolidado Geral de EPIs Vencidos/Críticos", corpo_hst)
+
+    # 2. ENVIAR ALERTAS INDIVIDUAIS POR ÁREA PARA CADA GESTOR
+    departamentos = df_problemas['Departamento'].unique()
+    for depto in departamentos:
+        email_gestor = MAPA_EMAILS_GESTORES.get(depto, "")
+        if email_gestor:
+            df_depto = df_problemas[df_problemas['Departamento'] == depto]
+            linhas_depto_html = "".join([f"<tr><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td style='color:red;'>{r['Status']}</td></tr>" for _, r in df_depto.iterrows()])
+            
+            corpo_gestor = f"""
+            <h3>⚠️ Alerta de Segurança do Trabalho: EPIs Vencidos em sua Área ({depto})</h3>
+            <p>Olá Gestor, identificamos colaboradores sob sua gestão com EPIs vencidos ou em estado crítico de validade. Providencie a substituição imediata:</p>
+            <table border='1' cellpadding='5' style='border-collapse: collapse;'>
+                <tr style='background-color: #0056b3; color: white;'><th>RE</th><th>Funcionário</th><th>Equipamento (EPI)</th><th>Situação</th></tr>
+                {linhas_depto_html}
+            </table>
+            <br><p><i>Este é um disparo automático mensal emitido em conformidade com a NR-6.</i></p>
+            """
+            enviar_notificacao_email(email_gestor, f"⚠️ Alerta Mensal: Regularização de EPIs - Setor {depto}", corpo_gestor)
+            
+    return "E-mails enviados com sucesso para as respectivas áreas e HST!"
 
 # ==============================================================================
 # FUNÇÃO AUXILIAR: GERADOR DE PDF DA FICHA DE EPI (NORMA NR-6)
