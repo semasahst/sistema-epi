@@ -455,48 +455,138 @@ elif menu == "📄 Gerar Ficha de EPI (Impressão)":
                         )
 
 # ==============================================================================
-# VISÕES DO DASHBOARD E ALERTAS (COM A REGRA DA ÚLTIMA ENTREGA ATIVA)
+# VISÕES DO DASHBOARD E ALERTAS (COMPLETO, COM FILTROS, GRÁFICOS E DOWNLOAD)
 # ==============================================================================
 else:
     if df_base_completa.empty:
         st.warning("Aguardando a sincronização dos dados...")
     else:
-        # APLICAÇÃO DA REGRA DE NEGÓCIO: Descarta duplicados antigos apenas para alertas e indicadores
+        # 1. Aplicação estrita da regra de negócio: Vencimento baseado apenas na última entrega ativa
         df_alertas_filtrado = df_base_completa.sort_values(by="Data Entrega", ascending=True)
         df_alertas_filtrado = df_alertas_filtrado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
 
+        # ==============================================================================
+        # PAINEL DE FILTROS DINÂMICOS NA BARRA LATERAL
+        # ==============================================================================
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🔍 Filtros do Painel")
+        
+        # Filtro de Departamento/Setor
+        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist())
+        deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
+        
+        # Filtro de Status de Validade
+        lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist())
+        status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
+        
+        # Aplicando os filtros ao Dataframe do Dashboard
+        df_painel_filtrado = df_alertas_filtrado[
+            (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
+            (df_alertas_filtrado['Status'].isin(status_selecionados))
+        ]
+
+        # ==============================================================================
+        # VISÃO: DASHBOARD DE GESTÃO INTERATIVO
+        # ==============================================================================
         if menu == "📊 Dashboard de Gestão":
             st.header("📊 Painel de Indicadores Estratégicos")
-            col_d1, col_d2 = st.columns(2)
-            with col_d1: data_ini_dash = st.date_input("De:", datetime.now().date() - timedelta(days=90))
-            with col_d2: data_fim_dash = st.date_input("Até:", datetime.now().date())
+            st.markdown("Indicadores de distribuição física e conformidade legal baseados na última entrega vigente de cada funcionário.")
             
-            df_dash = df_alertas_filtrado[(df_alertas_filtrado['Data Entrega'] >= pd.to_datetime(data_ini_dash)) & (df_alertas_filtrado['Data Entrega'] <= pd.to_datetime(data_fim_dash))]
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total de EPIs Vigentes", df_dash['Qtd'].sum() if not df_dash.empty else 0)
-            c2.metric("Assinaturas Pendentes", len(df_dash[df_dash['Assinatura'] == "Pendente"]) if not df_dash.empty else 0)
-            c3.metric("Itens Vencidos (NR-6)", len(df_dash[df_dash['Status'] == "🔴 VENCIDO"]) if not df_dash.empty else 0)
+            # Cards de Métricas Principais
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
+            c2.metric("🟢 Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🟢 Regular"]))
+            c3.metric("🟡 Alertas Críticos", len(df_painel_filtrado[df_painel_filtrado['Status'].str.contains("🟡")]))
+            c4.metric("🔴 Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🔴 VENCIDO"]))
             
             st.markdown("---")
-            col_g1, col_g2 = st.columns(2)
+            
+            col_g1, col_g2 = st.columns([1, 2])
+            
             with col_g1:
-                st.markdown("#### Consumo por Setor")
-                if not df_dash.empty: st.bar_chart(data=df_dash.groupby('Departamento')['Qtd'].sum().reset_index(), x='Departamento', y='Qtd')
+                st.markdown("#### 📈 Distribuição de Status de Validade")
+                if not df_painel_filtrado.empty:
+                    df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
+                    # Gráfico nativo do Streamlit mapeando a proporção de status
+                    st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade', color='Status')
+                else:
+                    st.info("Sem dados para exibir o gráfico de status.")
+                    
             with col_g2:
-                st.markdown("#### Modelos de EPI")
-                if not df_dash.empty: st.bar_chart(data=df_dash.groupby('EPI')['Qtd'].sum().reset_index().sort_values(by='Qtd', ascending=False), x='EPI', y='Qtd')
+                st.markdown("#### 👔 Matriz: Departamentos / Setores vs EPIs Solicitados")
+                if not df_painel_filtrado.empty:
+                    # Agrupamento cruzado para responder quais EPIs estão em quais setores
+                    df_pivot = df_painel_filtrado.groupby(['Departamento', 'EPI']).size().reset_index(name='Qtd')
+                    st.bar_chart(data=df_pivot, x='Departamento', y='Qtd', color='EPI', stack=True)
+                else:
+                    st.info("Sem dados para exibir a matriz de setores.")
+                    
+            st.markdown("---")
+            
+            # Seção de Exportação para Apresentações e E-mails
+            st.markdown("### 💾 Central de Exportação de Dados")
+            st.markdown("Baixe os dados consolidados e filtrados acima para anexar em e-mails corporativos ou montar seus relatórios e apresentações de slides.")
+            
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                # Preparando o arquivo CSV tratado para download rápido
+                df_export_clean = df_painel_filtrado[["RE", "Funcionário", "Departamento", "EPI", "CA", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status", "Assinatura"]].copy()
+                df_export_clean["Data Entrega"] = df_export_clean["Data Entrega"].dt.strftime("%d/%m/%Y")
+                df_export_clean["Data Vencimento"] = df_export_clean["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                
+                csv_dados = df_export_clean.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Baixar Relatório de Indicadores (CSV)",
+                    data=csv_dados,
+                    file_name=f"Relatorio_Indicadores_EPI_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with col_exp2:
+                st.info("💡 **Dica para Apresentações:** Você pode tirar um print dos gráficos acima usando o atalho `Win + Shift + S` para colar direto nos seus slides do PowerPoint ou e-mails!")
 
+        # ==============================================================================
+        # VISÃO: MONITOR DE EPIS VENCIDOS / A VENCER
+        # ==============================================================================
         elif menu == "⚠️ EPIs Vencidos/A Vencer":
             st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
+            st.markdown("Listagem operacional detalhada para ações corretivas imediatas de troca ou coleta de assinaturas.")
+            
             aba_val, aba_ass = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
+            
             with aba_val:
-                df_exib_val = df_alertas_filtrado.copy()
-                df_exib_val["Data Entrega"] = df_exib_val["Data Entrega"].dt.strftime("%d/%m/%Y")
-                df_exib_val["Data Vencimento"] = df_exib_val["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_exib_val.sort_values(by="Dias Restantes"), use_container_width=True)
+                if not df_painel_filtrado.empty:
+                    df_exib_val = df_painel_filtrado.copy()
+                    df_exib_val["Data Entrega"] = df_exib_val["Data Entrega"].dt.strftime("%d/%m/%Y")
+                    df_exib_val["Data Vencimento"] = df_exib_val["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                    
+                    st.dataframe(df_exib_val[["RE", "Funcionário", "Departamento", "EPI", "CA", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]].sort_values(by="Dias Restantes"), use_container_width=True)
+                    
+                    # Botão dedicado para baixar a lista de compras/trocas de EPIs baseado no que foi filtrado
+                    csv_Valores = df_exib_val.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Exportar Lista Operacional de Prazos (CSV)",
+                        data=csv_Valores,
+                        file_name=f"Planilha_Prazos_EPI_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info("Nenhum item pendente de validação nos filtros selecionados.")
+                    
             with aba_ass:
-                df_exib_ass = df_alertas_filtrado[df_alertas_filtrado['Assinatura'] == "Pendente"].copy()
-                df_exib_ass["Data Entrega"] = df_exib_ass["Data Entrega"].dt.strftime("%d/%m/%Y")
-                df_exib_ass["Data Vencimento"] = df_exib_ass["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_exib_ass, use_container_width=True)
+                df_exib_ass = df_painel_filtrado[df_painel_filtrado['Assinatura'] == "Pendente"].copy()
+                if not df_exib_ass.empty:
+                    df_exib_ass["Data Entrega"] = df_exib_ass["Data Entrega"].dt.strftime("%d/%m/%Y")
+                    df_exib_ass["Data Vencimento"] = df_exib_ass["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                    
+                    st.dataframe(df_exib_ass[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Status"]], use_container_width=True)
+                    
+                    csv_ass = df_exib_ass.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Exportar Lista de Pendentes de Assinatura (CSV)",
+                        data=csv_ass,
+                        file_name=f"Funcionarios_Sem_Assinatura_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.success("🎉 Nenhuma assinatura pendente de crachá NFC encontrada para os filtros atuais!")
