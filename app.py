@@ -333,7 +333,7 @@ if menu == "📝 Lançar Novos EPIs":
                         st.error("❌ Erro ao salvar no GitHub.")
 
 # ==============================================================================
-# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE (CORRIGIDO)
+# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE (CORRIGIDO SEM LOOPING)
 # ==============================================================================
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Regularização de Assinaturas Pendentes")
@@ -356,7 +356,17 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 st.dataframe(df_exibir, use_container_width=True)
                 
                 st.markdown("### 💳 Validação de Baixa Segura")
-                nfc_baixa = st.text_input("APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", type="password").strip()
+                
+                # Inicializa a chave do crachá no session_state para controle de limpeza
+                if "input_cracha_baixa" not in st.session_state:
+                    st.session_state.input_cracha_baixa = ""
+                
+                # Input controlado pelo session_state
+                nfc_baixa = st.text_input(
+                    "APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", 
+                    type="password",
+                    key="input_cracha_baixa"
+                ).strip()
                 
                 if nfc_baixa:
                     df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
@@ -383,13 +393,15 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                     data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                     
                                     for idx_orig in indices_para_alterar:
-                                        # Força a alteração estrita na coluna de índice 5 (Data de Entrega / Status)
                                         df_raw_csv.iloc[int(idx_orig), 5] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
                                         st.success(f"🎉 Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
                                         st.balloons()
-                                        st.rerun()  # Atualiza a tela imediatamente para sumir com os itens resolvidos
+                                        
+                                        # CRUCIAL: Limpa o campo do crachá do estado da sessão antes de reiniciar para evitar o looping
+                                        st.session_state.input_cracha_baixa = ""
+                                        st.rerun()
                                     else:
                                         st.error("Erro ao salvar no GitHub.")
                                 else:
