@@ -179,11 +179,12 @@ from email.mime.text import MIMEText
 
 # Dicionário de e-mails para os gestores (ajuste os nomes dos Departamentos e e-mails exatamente como constam no seu sistema)
 MAPA_EMAILS_GESTORES = {
-    "Logística": "gestor.logistica@semasa.com",
-    "Operações": "gestor.operacoes@semasa.com",
-    "Manutenção": "gestor.manutencao@semasa.com",
-    "Administrativo": "gestor.adm@semasa.com",
-    "HST_GERAL": "equipe.hst@semasa.com" # E-mail do HST que recebe o consolidado completo
+    "DMO": "adonini@semasa.sp.gov.br",
+    "GRH": "ACampos1@semasa.sp.gov.br",
+    "DGA": "adonini@semasa.sp.gov.br",
+    "DSAA": "ACampos1@semasa.sp.gov.br",
+    "DRS": "adonini@semasa.sp.gov.br", 
+    "HST_GERAL": "adonini@semasa.sp.gov.br, "ACampos1@semasa.sp.gov.br" " # E-mail do HST que recebe o consolidado completo
 }
 
 def enviar_notificacao_email(destinatario, assunto, corpo_html):
