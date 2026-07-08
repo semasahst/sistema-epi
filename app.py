@@ -184,7 +184,7 @@ MAPA_EMAILS_GESTORES = {
     "DGA": "adonini@semasa.sp.gov.br",
     "DSAA": "ACampos1@semasa.sp.gov.br",
     "DRS": "adonini@semasa.sp.gov.br", 
-    "HST_GERAL": "adonini@semasa.sp.gov.br, "ACampos1@semasa.sp.gov.br" " # E-mail do HST que recebe o consolidado completo
+    "HST_GERAL": "adonini@semasa.sp.gov.br, "ACampos1@semasa.sp.gov.br"  # E-mail do HST que recebe o consolidado completo
 }
 
 def enviar_notificacao_email(destinatario, assunto, corpo_html):
