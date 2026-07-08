@@ -333,7 +333,7 @@ if menu == "📝 Lançar Novos EPIs":
                         st.error("❌ Erro ao salvar no GitHub.")
 
 # ==============================================================================
-# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE
+# VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE (CORRIGIDO)
 # ==============================================================================
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Regularização de Assinaturas Pendentes")
@@ -383,17 +383,19 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                                     data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                     
                                     for idx_orig in indices_para_alterar:
-                                        ultima_col = len(df_raw_csv.columns) - 1
-                                        df_raw_csv.iloc[int(idx_orig), ultima_col] = data_hoje_str
+                                        # Força a alteração estrita na coluna de índice 5 (Data de Entrega / Status)
+                                        df_raw_csv.iloc[int(idx_orig), 5] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
                                         st.success(f"🎉 Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
                                         st.balloons()
+                                        st.rerun()  # Atualiza a tela imediatamente para sumir com os itens resolvidos
                                     else:
                                         st.error("Erro ao salvar no GitHub.")
+                                else:
+                                    st.error("Não foi possível acessar o repositório.")
                             except Exception as ex:
                                 st.error(f"Falha técnica: {ex}")
-
 # ==============================================================================
 # VISÃO 3: GERAR FICHA OFICIAL DE EPI PARA IMPRESSÃO/SALVAMENTO
 # ==============================================================================
