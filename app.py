@@ -397,39 +397,119 @@ menu = st.sidebar.selectbox(
 # EXECUÇÃO DAS VISÕES DO SISTEMA
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
-    # Mantenha o seu código atual de lançamento aqui caso tenha apagado sem querer
     st.header("📝 Lançamento e Entrega de EPIs")
-    st.markdown("Utilize esta seção para registrar novas movimentações de entrega de equipamentos.")
+    st.markdown("Registre novos fornecimentos de Equipamentos de Proteção Individual em conformidade com a NR-6.")
+    
+    # Formulário de cadastro estruturado
+    with st.form("form_lancamento", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            re_novo = st.text_input("RE do Colaborador (Apenas números):")
+            # Tenta buscar o nome automaticamente se df_func estiver carregado
+            nome_sugerido = ""
+            if re_novo and 'df_func' in locals() and not df_func.empty:
+                linhas_f = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(re_novo).strip()]
+                if not lines_f.empty:
+                    nome_sugerido = str(lines_f.iloc[0, 1]).strip()
+            
+            nome_novo = st.text_input("Nome Completo do Funcionário:", value=nome_sugerido)
+            depto_novo = st.selectbox("Departamento / Setor:", ["Administrativo", "Logística", "Manutenção", "Operações", "Outros"])
+        
+        with col2:
+            epi_novo = st.selectbox("Equipamento (EPI):", ["Avental em Kevlar", "Botina de Segurança", "Capa de Chuva", "Capacete", "Luva Agentes Mecânicos", "Luva Isolante", "Protetor Auricular Plug", "Sapato de Segurança"])
+            ca_novo = st.text_input("Número do C.A. (Certificado de Aprovação):")
+            qtd_nova = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
+            
+        data_entrega_nova = st.date_input("Data de Entrega do EPI:", value=datetime.today())
+        
+        st.markdown("---")
+        botao_salvar = st.form_submit_button("💾 Registrar Entrega no Banco de Dados", use_container_width=True)
+        
+        if botao_salvar:
+            if not re_novo or not nome_novo or not ca_novo:
+                st.error("❌ Por favor, preencha todos os campos obrigatórios (RE, Nome e CA).")
+            else:
+                # Cria a nova linha para salvar no respostas.csv
+                # Formato padrão: Carimbo, RE, Funcionario, EPI, Data, Quantidade, Coluna5, Quantidade.1, Nome completo, Data entrega, Quantidade...
+                nova_linha = {
+                    "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    "RE": re_novo.strip(),
+                    "Funcionário": nome_novo.strip(),
+                    "EPI": epi_novo,
+                    "Data": data_entrega_nova.strftime("%Y-%m-%d"),
+                    "Quantidade": qtd_nova,
+                    "CA": ca_novo.strip(),
+                    "Assinatura": "Pendente",
+                    "Departamento": depto_novo
+                }
+                
+                # Código interno de salvamento (append no seu CSV de respostas)
+                try:
+                    # Carrega temporariamente para dar o append estruturado
+                    df_temporario = pd.DataFrame([nova_linha])
+                    # Verifica se o arquivo já existe para manter o cabeçalho
+                    if os.path.exists("respostas.csv"):
+                        df_temporario.to_csv("respostas.csv", mode='a', header=False, index=False, encoding='utf-8')
+                    else:
+                        df_temporario.to_csv("respostas.csv", index=False, encoding='utf-8')
+                        
+                    st.success(f"🎉 Registro de {epi_novo} para {nome_novo} salvo com sucesso! Pendente de assinatura.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar arquivo físico: {e}")
 
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Registro de Assinatura Eletrônica via Crachá NFC")
-    st.markdown("Aproximação do dispositivo físico para validação jurídica de entrega.")
+    st.markdown("Aproxime o cartão/crachá físico do colaborador no leitor USB conectado para assinar digitalmente as entregas pendentes.")
+    
+    # Campo simulador ou leitura do leitor físico (UID do cartão)
+    uid_leitor = st.text_input("Aguardando leitura do Sensor NFC (Posicione o Crachá):", key="nfc_uid_input")
+    
+    if uid_leitor:
+        # Busca o funcionário correspondente ao cartão NFC na base df_func
+        if 'df_func' in locals() and not df_func.empty:
+            # Assumindo que a coluna 4 ou 5 do seu funcionários.csv guarda a TAG/UID do cartão
+            # Se não houver, ele busca diretamente pelo RE digitado no campo do sensor
+            df_encontrado = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(uid_leitor).strip()]
+            
+            if not df_encontrado.empty:
+                re_func = str(df_encontrado.iloc[0, 0]).strip()
+                nome_func = str(df_encontrado.iloc[0, 1]).strip()
+                
+                st.info(f"👤 Crachá Identificado: **{nome_func} (RE: {re_func})**")
+                
+                # Procura registros pendentes deste funcionário na base completa
+                if not df_base_completa.empty:
+                    pendencias = df_base_completa[
+                        (df_base_completa["RE"].astype(str).str.strip() == re_func) & 
+                        (df_base_completa["Assinatura"] == "Pendente")
+                    ]
+                    
+                    if not pendencias.empty:
+                        st.warning(f"Existe(m) {len(pendencias)} EPI(s) aguardando assinatura jurídica de recebimento.")
+                        st.dataframe(pendencias[["EPI", "CA", "Quantidade", "Data Entrega"]], use_container_width=True)
+                        
+                        if st.button("✍️ Confirmar Assinatura Digital (Gravar na Ficha)", use_container_width=True, type="primary"):
+                            # Código de atualização: Altera 'Pendente' para a data da assinatura no arquivo respostas.csv
+                            try:
+                                df_csv_fisico = pd.read_csv("respostas.csv", encoding='utf-8')
+                                # Força a alteração das linhas específicas no arquivo físico
+                                mask = (df_csv_fisico["RE"].astype(str).str.strip() == re_func) & (df_csv_fisico["Assinatura"] == "Pendente")
+                                df_csv_fisico.loc[mask, "Assinatura"] = f"Assinado digitalmente em {datetime.now().strftime('%d/%m/%Y')}"
+                                
+                                df_csv_fisico.to_csv("respostas.csv", index=False, encoding='utf-8')
+                                st.success("🎉 Documento assinado eletronicamente com sucesso! Atualizando indicadores...")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar base de assinaturas: {e}")
+                    else:
+                        st.success("🟢 Tudo certo! Este colaborador não possui nenhuma entrega pendente de assinatura.")
+            else:
+                st.error("❌ Código de crachá ou RE não localizado na tabela de cadastros ativos.")
+        else:
+            st.error("Tabela de funcionários descarregada ou indisponível.")
 
 elif menu == "📄 Gerar Ficha de EPI (Impressão)":
-    st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
-    st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável em PDF.")
-    
-    re_busca = st.text_input("Digite o RE do Colaborador:", key="re_busca_ficha")
-    if re_busca:
-        if not df_base_completa.empty:
-            df_re = df_base_completa[df_base_completa["RE"].astype(str).str.strip() == str(re_busca).strip()]
-            if not df_re.empty:
-                nome_func = df_re.iloc[0]["Funcionário"]
-                depto_func = df_re.iloc[0]["Departamento"]
-                st.success(f"👤 Funcionário localizado: {nome_func} | Setor: {depto_func}")
-                
-                st.markdown("### Itens que constarão no documento:")
-                df_exib = df_re.copy()
-                df_exib["Data Entrega"] = df_exib["Data Entrega"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_exib[["EPI", "CA", "Quantidade", "Data Entrega", "Assinatura"]], use_container_width=True)
-                
-                # Botão dummy/exemplo para o PDF
-                st.button("📥 Baixar Ficha de EPI Oficial (PDF)", key="btn_pdf_ficha")
-            else:
-                st.error("❌ Nenhum registro de entrega foi localizado para este RE no banco de dados.")
-        else:
-            st.warning("Base de dados vazia ou aguardando sincronização.")
-
 # ==============================================================================
 # VISÕES DE INDICADORES, ALERTAS E CORREÇÃO DE INDENTAÇÃO
 # ==============================================================================
