@@ -394,23 +394,21 @@ menu = st.sidebar.selectbox(
 )
 
 # ==============================================================================
-# EXECUÇÃO DAS VISÕES DO SISTEMA
+# EXECUÇÃO DAS VISÕES DO SISTEMA (ESTRUTURA CORRIGIDA)
 # ==============================================================================
 if menu == "📝 Lançar Novos EPIs":
     st.header("📝 Lançamento e Entrega de EPIs")
     st.markdown("Registre novos fornecimentos de Equipamentos de Proteção Individual em conformidade com a NR-6.")
     
-    # Formulário de cadastro estruturado
     with st.form("form_lancamento", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             re_novo = st.text_input("RE do Colaborador (Apenas números):")
-            # Tenta buscar o nome automaticamente se df_func estiver carregado
             nome_sugerido = ""
             if re_novo and 'df_func' in locals() and not df_func.empty:
                 linhas_f = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(re_novo).strip()]
-                if not lines_f.empty:
-                    nome_sugerido = str(lines_f.iloc[0, 1]).strip()
+                if not linhas_f.empty:
+                    nome_sugerido = str(linhas_f.iloc[0, 1]).strip()
             
             nome_novo = st.text_input("Nome Completo do Funcionário:", value=nome_sugerido)
             depto_novo = st.selectbox("Departamento / Setor:", ["Administrativo", "Logística", "Manutenção", "Operações", "Outros"])
@@ -429,8 +427,6 @@ if menu == "📝 Lançar Novos EPIs":
             if not re_novo or not nome_novo or not ca_novo:
                 st.error("❌ Por favor, preencha todos os campos obrigatórios (RE, Nome e CA).")
             else:
-                # Cria a nova linha para salvar no respostas.csv
-                # Formato padrão: Carimbo, RE, Funcionario, EPI, Data, Quantidade, Coluna5, Quantidade.1, Nome completo, Data entrega, Quantidade...
                 nova_linha = {
                     "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                     "RE": re_novo.strip(),
@@ -442,43 +438,32 @@ if menu == "📝 Lançar Novos EPIs":
                     "Assinatura": "Pendente",
                     "Departamento": depto_novo
                 }
-                
-                # Código interno de salvamento (append no seu CSV de respostas)
                 try:
-                    # Carrega temporariamente para dar o append estruturado
                     df_temporario = pd.DataFrame([nova_linha])
-                    # Verifica se o arquivo já existe para manter o cabeçalho
                     if os.path.exists("respostas.csv"):
                         df_temporario.to_csv("respostas.csv", mode='a', header=False, index=False, encoding='utf-8')
                     else:
                         df_temporario.to_csv("respostas.csv", index=False, encoding='utf-8')
-                        
-                    st.success(f"🎉 Registro de {epi_novo} para {nome_novo} salvo com sucesso! Pendente de assinatura.")
+                    st.success(f"🎉 Registro de {epi_novo} para {nome_novo} salvo com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar arquivo físico: {e}")
 
 elif menu == "✍️ Coletar Assinaturas Pendentes":
     st.header("✍️ Registro de Assinatura Eletrônica via Crachá NFC")
-    st.markdown("Aproxime o cartão/crachá físico do colaborador no leitor USB conectado para assinar digitalmente as entregas pendentes.")
+    st.markdown("Aproxime o cartão/crachá físico do colaborador no leitor USB conectado para assinar digitalmente.")
     
-    # Campo simulador ou leitura do leitor físico (UID do cartão)
     uid_leitor = st.text_input("Aguardando leitura do Sensor NFC (Posicione o Crachá):", key="nfc_uid_input")
     
     if uid_leitor:
-        # Busca o funcionário correspondente ao cartão NFC na base df_func
         if 'df_func' in locals() and not df_func.empty:
-            # Assumindo que a coluna 4 ou 5 do seu funcionários.csv guarda a TAG/UID do cartão
-            # Se não houver, ele busca diretamente pelo RE digitado no campo do sensor
             df_encontrado = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(uid_leitor).strip()]
             
             if not df_encontrado.empty:
                 re_func = str(df_encontrado.iloc[0, 0]).strip()
                 nome_func = str(df_encontrado.iloc[0, 1]).strip()
-                
                 st.info(f"👤 Crachá Identificado: **{nome_func} (RE: {re_func})**")
                 
-                # Procura registros pendentes deste funcionário na base completa
                 if not df_base_completa.empty:
                     pendencias = df_base_completa[
                         (df_base_completa["RE"].astype(str).str.strip() == re_func) & 
@@ -486,51 +471,64 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                     ]
                     
                     if not pendencias.empty:
-                        st.warning(f"Existe(m) {len(pendencias)} EPI(s) aguardando assinatura jurídica de recebimento.")
+                        st.warning(f"Existe(m) {len(pendencias)} EPI(s) aguardando assinatura jurídica.")
                         st.dataframe(pendencias[["EPI", "CA", "Quantidade", "Data Entrega"]], use_container_width=True)
                         
-                        if st.button("✍️ Confirmar Assinatura Digital (Gravar na Ficha)", use_container_width=True, type="primary"):
-                            # Código de atualização: Altera 'Pendente' para a data da assinatura no arquivo respostas.csv
+                        if st.button("✍️ Confirmar Assinatura Digital", use_container_width=True, type="primary"):
                             try:
                                 df_csv_fisico = pd.read_csv("respostas.csv", encoding='utf-8')
-                                # Força a alteração das linhas específicas no arquivo físico
                                 mask = (df_csv_fisico["RE"].astype(str).str.strip() == re_func) & (df_csv_fisico["Assinatura"] == "Pendente")
                                 df_csv_fisico.loc[mask, "Assinatura"] = f"Assinado digitalmente em {datetime.now().strftime('%d/%m/%Y')}"
-                                
                                 df_csv_fisico.to_csv("respostas.csv", index=False, encoding='utf-8')
-                                st.success("🎉 Documento assinado eletronicamente com sucesso! Atualizando indicadores...")
+                                st.success("🎉 Documento assinado eletronicamente com sucesso!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao atualizar base de assinaturas: {e}")
                     else:
-                        st.success("🟢 Tudo certo! Este colaborador não possui nenhuma entrega pendente de assinatura.")
+                        st.success("🟢 Tudo certo! Este colaborador não possui entregas pendentes.")
             else:
-                st.error("❌ Código de crachá ou RE não localizado na tabela de cadastros ativos.")
-        else:
-            st.error("Tabela de funcionários descarregada ou indisponível.")
+                st.error("❌ Código de crachá ou RE não localizado na tabela.")
 
 elif menu == "📄 Gerar Ficha de EPI (Impressão)":
+    st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
+    st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável em PDF.")
+    
+    re_busca = st.text_input("Digite o RE do Colaborador:", key="re_busca_ficha")
+    if re_busca:
+        if not df_base_completa.empty:
+            df_re = df_base_completa[df_base_completa["RE"].astype(str).str.strip() == str(re_busca).strip()]
+            if not df_re.empty:
+                nome_func = df_re.iloc[0]["Funcionário"]
+                depto_func = df_re.iloc[0]["Departamento"]
+                st.success(f"👤 Funcionário localizado: {nome_func} | Setor: {depto_func}")
+                
+                st.markdown("### Itens que constarão no documento:")
+                df_exib = df_re.copy()
+                df_exib["Data Entrega"] = df_exib["Data Entrega"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_exib[["EPI", "CA", "Quantidade", "Data Entrega", "Assinatura"]], use_container_width=True)
+                st.button("📥 Baixar Ficha de EPI Oficial (PDF)", key="btn_pdf_ficha")
+            else:
+                st.error("❌ Nenhum registro de entrega foi localizado para este RE no banco de dados.")
+        else:
+            st.warning("Base de dados vazia.")
+
 # ==============================================================================
-# VISÕES DE INDICADORES, ALERTAS E CORREÇÃO DE INDENTAÇÃO
+# BLOCO CENTRAL DE DADOS E RELATÓRIOS (DASHBOARD, VELEDO, E-MAIL)
 # ==============================================================================
 else:
     if df_base_completa.empty:
         st.warning("Aguardando a sincronização dos dados...")
     else:
-        # 1. Aplicação estrita da regra de negócio: Vencimento baseado apenas na última entrega ativa
         df_alertas_filtrado = df_base_completa.sort_values(by="Data Entrega", ascending=True)
         df_alertas_filtrado = df_alertas_filtrado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
 
-        # Mapeia dinamicamente os Cargos a partir da df_func se disponível
         if 'df_func' in locals() and not df_func.empty and len(df_func.columns) > 3:
             mapa_cargos = {str(row.iloc[1]).strip().upper(): str(row.iloc[3]).strip() for _, row in df_func.iterrows()}
             df_alertas_filtrado['Cargo'] = df_alertas_filtrado['Funcionário'].str.strip().str.upper().map(mapa_cargos).fillna("Não Informado")
         else:
             df_alertas_filtrado['Cargo'] = "Não Informado"
 
-        # ==============================================================================
-        # PAINEL DE FILTROS DINÂMICOS NA BARRA LATERAL
-        # ==============================================================================
+        # Painel de Filtros Laterais
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🔍 Filtros do Painel")
         
@@ -543,20 +541,14 @@ else:
         lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist())
         status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
         
-        # Filtra os dados conforme a seleção do usuário
         df_painel_filtrado = df_alertas_filtrado[
             (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
             (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
             (df_alertas_filtrado['Status'].isin(status_selecionados))
         ]
 
-        # ==============================================================================
-        # VISÃO: DASHBOARD DE GESTÃO INTERATIVO
-        # ==============================================================================
         if menu == "📊 Dashboard de Gestão":
             st.header("📊 Painel de Indicadores Estratégicos")
-            st.markdown("Indicadores de distribuição física e conformidade legal de fácil entendimento.")
-            
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
             c2.metric("🟢 Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🟢 Regular"]))
@@ -564,64 +556,26 @@ else:
             c4.metric("🔴 Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🔴 VENCIDO"]))
             
             st.markdown("---")
-            
-            # Gráficos Limpos e Desmembrados (Sem empilhamentos)
             col_g1, col_g2 = st.columns(2)
             with col_g1:
                 st.markdown("#### 📈 Situação Geral de Validade")
                 if not df_painel_filtrado.empty:
                     df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
                     st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade', color='Status')
-                else:
-                    st.info("Sem dados para exibir o gráfico.")
-                    
             with col_g2:
                 st.markdown("#### 🛡️ Modelos de EPIs Mais Entregues")
                 if not df_painel_filtrado.empty:
                     df_epi_grafico = df_painel_filtrado.groupby('EPI').size().reset_index(name='Quantidade').sort_values(by='Quantidade', ascending=False)
                     st.bar_chart(data=df_epi_grafico, x='EPI', y='Quantidade')
-                else:
-                    st.info("Sem dados para exibir o gráfico.")
-            
+
             st.markdown("---")
-            
-            col_g3, col_g4 = st.columns(2)
-            with col_g3:
-                st.markdown("#### 🏢 Volume de EPIs por Departamento")
-                if not df_painel_filtrado.empty:
-                    df_depto_grafico = df_painel_filtrado.groupby('Departamento').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
-                    st.bar_chart(data=df_depto_grafico, x='Departamento', y='Quantidade de EPIs')
-                else:
-                    st.info("Sem dados para exibir o gráfico.")
-                    
-            with col_g4:
-                st.markdown("#### 👔 Volume de EPIs por Cargo")
-                if not df_painel_filtrado.empty:
-                    df_cargo_grafico = df_painel_filtrado.groupby('Cargo').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
-                    st.bar_chart(data=df_cargo_grafico, x='Cargo', y='Quantidade de EPIs')
-                else:
-                    st.info("Sem dados para exibir o gráfico.")
-                    
-            st.markdown("---")
-            
-            # Central de Exportações
-            st.markdown("### 💾 Central de Exportação de Dados")
             df_export_clean = df_painel_filtrado[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "CA", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status", "Assinatura"]].copy()
             df_export_clean["Data Entrega"] = df_export_clean["Data Entrega"].dt.strftime("%d/%m/%Y")
             df_export_clean["Data Vencimento"] = df_export_clean["Data Vencimento"].dt.strftime("%d/%m/%Y")
             
             csv_dados = df_export_clean.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Baixar Relatório de Indicadores (CSV)",
-                data=csv_dados,
-                file_name=f"Relatorio_Indicadores_EPI_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            st.download_button(label="📥 Baixar Relatório de Indicadores (CSV)", data=csv_dados, file_name="Relatorio_Indicadores_EPI.csv", mime="text/csv", use_container_width=True)
 
-        # ==============================================================================
-        # VISÃO: MONITOR DE EPIS VENCIDOS / A VENCER
-        # ==============================================================================
         elif menu == "⚠️ EPIs Vencidos/A Vencer":
             st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
             aba_val, aba_ass = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
@@ -632,9 +586,7 @@ else:
                     df_exib_val["Data Entrega"] = df_exib_val["Data Entrega"].dt.strftime("%d/%m/%Y")
                     df_exib_val["Data Vencimento"] = df_exib_val["Data Vencimento"].dt.strftime("%d/%m/%Y")
                     st.dataframe(df_exib_val[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "CA", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]].sort_values(by="Dias Restantes"), use_container_width=True)
-                else:
-                    st.info("Nenhum item pendente nos filtros selecionados.")
-                    
+            
             with aba_ass:
                 df_exib_ass = df_painel_filtrado[df_painel_filtrado['Assinatura'] == "Pendente"].copy()
                 if not df_exib_ass.empty:
@@ -643,9 +595,6 @@ else:
                 else:
                     st.success("🎉 Nenhuma assinatura pendente encontrada!")
 
-        # ==============================================================================
-        # VISÃO: DISPARADOR DE E-MAILS (HST)
-        # ==============================================================================
         elif menu == "📧 Disparador de Alertas (HST)":
             st.header("📧 Central de Notificações via E-mail")
             st.markdown("Gerencie as rotinas automatizadas de envio de alertas da NR-6.")
