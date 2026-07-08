@@ -184,17 +184,44 @@ MAPA_EMAILS_GESTORES = {
     "DGA": "adonini@semasa.sp.gov.br",
     "DSAA": "ACampos1@semasa.sp.gov.br",
     "DRS": "adonini@semasa.sp.gov.br", 
-    "HST_GERAL": "adonini@semasa.sp.gov.br, "ACampos1@semasa.sp.gov.br"  # E-mail do HST que recebe o consolidado completo
+    "HST_GERAL": ["adonini@semasa.sp.gov.br", "ACampos1@semasa.sp.gov.br"]  # E-mail do HST que recebe o consolidado completo
 }
-
 def enviar_notificacao_email(destinatario, assunto, corpo_html):
-    """Função genérica de disparo de e-mail via SMTP com suporte a HTML."""
+    """Função genérica de disparo de e-mail com suporte a destinatário único ou lista."""
     remetente = st.secrets.get("EMAIL_REMETENTE", "")
     senha = st.secrets.get("EMAIL_SENHA", "")
     smtp_server = st.secrets.get("EMAIL_SMTP", "smtp.gmail.com")
     porta = int(st.secrets.get("EMAIL_PORTA", 587))
     
     if not remetente or not senha:
+        return False
+        
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = assunto
+        msg['From'] = remetente
+        
+        # Tratamento inteligente: Se for uma lista de e-mails, junta com vírgula para o cabeçalho
+        if isinstance(destinatario, list):
+            msg['To'] = ", ".join(destinatario)
+            lista_envio = destinatario
+        else:
+            msg['To'] = destinatario
+            lista_envio = [destinatario]
+        
+        part = MIMEText(corpo_html, 'html')
+        msg.attach(part)
+        
+        server = smtplib.SMTP(smtp_server, porta)
+        server.starttls()
+        server.login(remetente, senha)
+        
+        # O servidor SMTP precisa receber a lista exata de quem vai receber o e-mail
+        server.sendmail(remetente, lista_envio, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Erro ao enviar e-mail: {e}")
         return False
         
     try:
