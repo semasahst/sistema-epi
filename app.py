@@ -200,11 +200,12 @@ def gerar_pdf_ficha(re_func, nome_func, depto_func, df_itens):
     story.append(Spacer(1, 15))
     
     termo_legal = """
-    Declaro que recebi da SEMASA, gratuitamente, os Equipamentos de Proteção Individual (EPIs) constantes nesta ficha, 
-    adequados ao risco das minhas atividades. Comprometo-me a utilizá-los corretamente durante as jornadas de trabalho, 
-    zelar pela sua guarda e conservação, e comunicar imediatamente ao setor de Segurança do Trabalho qualquer alteração 
-    que o torne impróprio para o uso, estando ciente de que o descumprimento desta norma constitui ato faltoso, conforme 
-    artigo 158 da CLT e a Norma Regulamentadora NR-6.
+Declaramos para os devidos fins legais que recebi do SEMASA os Equipamentos de Proteção Individual (EPIs)
+relacionados na listagem abaixo, adequados ao risco das minhas funções operacionais. Comprometo-me ao uso
+obrigatório, guarda, zelo e higienização dos mesmos. Cláusula de Validação Biométrica Corporativa: Fica
+expressamente eleito e acordado entre as partes que a aposição física do crachá funcional NFC com código UID
+unívoco e individualizado do trabalhador atua como assinatura eletrônica avançada, plenamente íntegra e com total
+validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
     """
     story.append(Paragraph(f"<i>{termo_legal}</i>", style_termo))
     story.append(Spacer(1, 15))
