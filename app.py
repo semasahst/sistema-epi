@@ -354,16 +354,19 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
 # MENU LATERAL INTERATIVO
 # ==============================================================================
 st.sidebar.markdown("## 🧭 Navegação Sistema")
-menu = st.sidebar.selectbox(
+
+        menu = st.sidebar.selectbox(
     "Escolha a Visão:", 
     [
         "📝 Lançar Novos EPIs", 
         "✍️ Coletar Assinaturas Pendentes", 
         "📄 Gerar Ficha de EPI (Impressão)", 
         "📊 Dashboard de Gestão", 
-        "⚠️ EPIs Vencidos/A Vencer"
+        "⚠️ EPIs Vencidos/A Vencer",
+        "📧 Disparador de Alertas (HST)" # <--- NOVO MENU
     ]
 )
+   
 
 # ==============================================================================
 # VISÃO 1: LANÇAMENTO COM SUPORTE A MÚLTIPLOS EPIS
@@ -776,3 +779,21 @@ else:
                     )
                 else:
                     st.success("🎉 Nenhuma assinatura pendente de crachá NFC encontrada para os filtros atuais!")
+                    elif menu == "📧 Disparador de Alertas (HST)":
+            st.header("📧 Central de Notificações via E-mail")
+            st.markdown("Gerencie as rotinas automatizadas de envio de alertas de vencimento da NR-6 para os líderes de seção.")
+            
+            st.info("💡 **Como funciona o automatizador?** O sistema verifica de forma inteligente se hoje é o **primeiro dia útil** do mês atual. Se for positivo, ele envia os relatórios segmentados de forma totalmente autônoma.")
+            
+            st.markdown("### ⚡ Teste ou Disparo Forçado Manual")
+            if st.button("🚀 Disparar E-mails de Alerta Agora (Forçar Envio)", use_container_width=True):
+                with st.spinner("Processando base de dados e enviando e-mails..."):
+                    resultado = processar_e_enviar_alertas_mensais(forcar=True)
+                    st.success(resultado)
+
+# ==============================================================================
+# DISPARO INVISÍVEL AUTOMÁTICO VIA LINK (WEBHOOK PARA CRON-JOB.ORG)
+# ==============================================================================
+# Se a automação acessar o link: https://seu-app.streamlit.app/?executar_alerta=1
+if st.query_params.get("executar_alerta") == "1":
+    processar_e_enviar_alertas_mensais(forcar=False)
