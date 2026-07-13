@@ -517,11 +517,11 @@ elif menu == "disparador_alertas":
                 
                 assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO EXTRAORDINÁRIA: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
                 corpo_lote = urllib.parse.quote(
-                    f"Prezado(a) {nome_f},%0A%0A"
-                    f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA:%0A%0A"
-                    f"{lista_itens}%0A%0A"
-                    f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Compareça ao HST hoje.%0A%0A"
-                    f"Atenciosamente,%0AEquipe de Segurança do Trabalho - SEMASA"
+                    f"Prezado(a) Gestor (a) identificamos que {nome_f}, "
+                    f"possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA:"
+                    f"{lista_itens}"
+                    f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Compareça ao HST hoje."
+                    f"Atenciosamente, A Equipe de Segurança do Trabalho - SEMASA"
                 )
                 
                 link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
