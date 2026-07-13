@@ -44,7 +44,7 @@ df_func, df_epis = buscar_dados_planilhas()
 # ==============================================================================
 def salvar_lote_no_github(novas_linhas_lista):
     if not GITHUB_TOKEN:
-        st.error("❌ Erro: GITHUB_TOKEN não configurado nas Secrets.")
+        st.error("? Erro: GITHUB_TOKEN não configurado nas Secrets.")
         return False
         
     url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
@@ -144,7 +144,7 @@ def construir_base_alertas():
         dias_validade = mapa_validades.get(nome_epi, 90)
         dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
-        status_validade = "🔴 VENCIDO" if dias_restantes < 0 else ("🟡 CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "🟢 Regular")
+        status_validade = "?? VENCIDO" if dias_restantes < 0 else ("?? CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "?? Regular")
         
         re_vinculado = "N/A"
         departamento = "Não Informado"
@@ -271,7 +271,7 @@ def processar_e_enviar_alertas_mensais(forcar=False):
     df_alertas = df_alertas.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
     
     # Filtra apenas o que está Vencido ou Crítico
-    df_problemas = df_alertas[df_alertas['Status'].str.contains("🔴|🟡")]
+    df_problemas = df_alertas[df_alertas['Status'].str.contains("??|??")]
     
     if df_problemas.empty:
         return "Sucesso: Nenhum EPI vencido ou crítico encontrado este mês!"
@@ -281,7 +281,7 @@ def processar_e_enviar_alertas_mensais(forcar=False):
     if email_hst:
         linhas_html = "".join([f"<tr><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['Departamento']}</td><td>{r['EPI']}</td><td>{r['Status']}</td></tr>" for _, r in df_problemas.iterrows()])
         corpo_hst = f"""
-        <h3>📊 Relatório Mensal Consolidado de EPIs - HST SEMASA</h3>
+        <h3>?? Relatório Mensal Consolidado de EPIs - HST SEMASA</h3>
         <p>Prezada equipe do HST, segue abaixo a listagem de todas as inconformidades ativas no sistema neste momento:</p>
         <table border='1' cellpadding='5' style='border-collapse: collapse;'>
             <tr style='background-color: #333; color: white;'><th>RE</th><th>Funcionário</th><th>Departamento</th><th>EPI</th><th>Status</th></tr>
@@ -289,7 +289,7 @@ def processar_e_enviar_alertas_mensais(forcar=False):
         </table>
         <br><p>Acesse o sistema para mais detalhes.</p>
         """
-        enviar_notificacao_email(email_hst, "📊 HST: Consolidado Geral de EPIs Vencidos/Críticos", corpo_hst)
+        enviar_notificacao_email(email_hst, "?? HST: Consolidado Geral de EPIs Vencidos/Críticos", corpo_hst)
 
     # 2. ENVIAR ALERTAS INDIVIDUAIS POR ÁREA PARA CADA GESTOR
     departamentos = df_problemas['Departamento'].unique()
@@ -300,7 +300,7 @@ def processar_e_enviar_alertas_mensais(forcar=False):
             linhas_depto_html = "".join([f"<tr><td>{r['RE']}</td><td>{r['Funcionário']}</td><td>{r['EPI']}</td><td style='color:red;'>{r['Status']}</td></tr>" for _, r in df_depto.iterrows()])
             
             corpo_gestor = f"""
-            <h3>⚠️ Alerta de Segurança do Trabalho: EPIs Vencidos em sua Área ({depto})</h3>
+            <h3>?? Alerta de Segurança do Trabalho: EPIs Vencidos em sua Área ({depto})</h3>
             <p>Olá Gestor, identificamos colaboradores sob sua gestão com EPIs vencidos ou em estado crítico de validade. Providencie a substituição imediata:</p>
             <table border='1' cellpadding='5' style='border-collapse: collapse;'>
                 <tr style='background-color: #0056b3; color: white;'><th>RE</th><th>Funcionário</th><th>Equipamento (EPI)</th><th>Situação</th></tr>
@@ -308,7 +308,7 @@ def processar_e_enviar_alertas_mensais(forcar=False):
             </table>
             <br><p><i>Este é um disparo automático mensal emitido em conformidade com a NR-6.</i></p>
             """
-            enviar_notificacao_email(email_gestor, f"⚠️ Alerta Mensal: Regularização de EPIs - Setor {depto}", corpo_gestor)
+            enviar_notificacao_email(email_gestor, f"?? Alerta Mensal: Regularização de EPIs - Setor {depto}", corpo_gestor)
             
     return "E-mails enviados com sucesso para as respectivas áreas e HST!"
 
@@ -351,7 +351,7 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
     tabela_dados = [["EPI / Descrição", "C.A.", "Qtd", "Data Entrega", "Forma de Assinatura"]]
     for _, row in df_itens.iterrows():
         dt_str = row['Data Entrega'].strftime('%d/%m/%Y') if isinstance(row['Data Entrega'], datetime) else str(row['Data Entrega'])
-        tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "⚠️ PENDENTE (Assinar à caneta)"
+        tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "?? PENDENTE (Assinar à caneta)"
         tabela_dados.append([row['EPI'], row['CA'], str(row['Qtd']), dt_str, tipo_ass])
         
     t = Table(tabela_dados, colWidths=[220, 60, 40, 80, 140])
@@ -384,20 +384,20 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
 menu = st.sidebar.selectbox(
     "Escolha a Visão:", 
     [
-        "📝 Lançar Novos EPIs", 
-        "✍️ Coletar Assinaturas Pendentes", 
-        "📄 Gerar Ficha de EPI (Impressão)", 
-        "📊 Dashboard de Gestão", 
-        "⚠️ EPIs Vencidos/A Vencer",
-        "📧 Disparador de Alertas (HST)"
+        "?? Lançar Novos EPIs", 
+        "?? Coletar Assinaturas Pendentes", 
+        "?? Gerar Ficha de EPI (Impressão)", 
+        "?? Dashboard de Gestão", 
+        "?? EPIs Vencidos/A Vencer",
+        "?? Disparador de Alertas (HST)"
     ]
 )
 
 # ==============================================================================
 # EXECUÇÃO DAS VISÕES DO SISTEMA (ESTRUTURA CORRIGIDA)
 # ==============================================================================
-if menu == "📝 Lançar Novos EPIs":
-    st.header("📝 Lançamento e Entrega de EPIs")
+if menu == "?? Lançar Novos EPIs":
+    st.header("?? Lançamento e Entrega de EPIs")
     st.markdown("Registre novos fornecimentos de Equipamentos de Proteção Individual em conformidade com a NR-6.")
     
     with st.form("form_lancamento", clear_on_submit=True):
@@ -421,11 +421,11 @@ if menu == "📝 Lançar Novos EPIs":
         data_entrega_nova = st.date_input("Data de Entrega do EPI:", value=datetime.today())
         
         st.markdown("---")
-        botao_salvar = st.form_submit_button("💾 Registrar Entrega no Banco de Dados", use_container_width=True)
+        botao_salvar = st.form_submit_button("?? Registrar Entrega no Banco de Dados", use_container_width=True)
         
         if botao_salvar:
             if not re_novo or not nome_novo or not ca_novo:
-                st.error("❌ Por favor, preencha todos os campos obrigatórios (RE, Nome e CA).")
+                st.error("? Por favor, preencha todos os campos obrigatórios (RE, Nome e CA).")
             else:
                 nova_linha = {
                     "Carimbo de data/hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -444,13 +444,13 @@ if menu == "📝 Lançar Novos EPIs":
                         df_temporario.to_csv("respostas.csv", mode='a', header=False, index=False, encoding='utf-8')
                     else:
                         df_temporario.to_csv("respostas.csv", index=False, encoding='utf-8')
-                    st.success(f"🎉 Registro de {epi_novo} para {nome_novo} salvo com sucesso!")
+                    st.success(f"?? Registro de {epi_novo} para {nome_novo} salvo com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar arquivo físico: {e}")
 
-elif menu == "✍️ Coletar Assinaturas Pendentes":
-    st.header("✍️ Registro de Assinatura Eletrônica via Crachá NFC")
+elif menu == "?? Coletar Assinaturas Pendentes":
+    st.header("?? Registro de Assinatura Eletrônica via Crachá NFC")
     st.markdown("Aproxime o cartão/crachá físico do colaborador no leitor USB conectado para assinar digitalmente.")
     
     uid_leitor = st.text_input("Aguardando leitura do Sensor NFC (Posicione o Crachá):", key="nfc_uid_input")
@@ -462,7 +462,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
             if not df_encontrado.empty:
                 re_func = str(df_encontrado.iloc[0, 0]).strip()
                 nome_func = str(df_encontrado.iloc[0, 1]).strip()
-                st.info(f"👤 Crachá Identificado: **{nome_func} (RE: {re_func})**")
+                st.info(f"?? Crachá Identificado: **{nome_func} (RE: {re_func})**")
                 
                 if not df_base_completa.empty:
                     pendencias = df_base_completa[
@@ -474,23 +474,23 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                         st.warning(f"Existe(m) {len(pendencias)} EPI(s) aguardando assinatura jurídica.")
                         st.dataframe(pendencias[["EPI", "CA", "Quantidade", "Data Entrega"]], use_container_width=True)
                         
-                        if st.button("✍️ Confirmar Assinatura Digital", use_container_width=True, type="primary"):
+                        if st.button("?? Confirmar Assinatura Digital", use_container_width=True, type="primary"):
                             try:
                                 df_csv_fisico = pd.read_csv("respostas.csv", encoding='utf-8')
                                 mask = (df_csv_fisico["RE"].astype(str).str.strip() == re_func) & (df_csv_fisico["Assinatura"] == "Pendente")
                                 df_csv_fisico.loc[mask, "Assinatura"] = f"Assinado digitalmente em {datetime.now().strftime('%d/%m/%Y')}"
                                 df_csv_fisico.to_csv("respostas.csv", index=False, encoding='utf-8')
-                                st.success("🎉 Documento assinado eletronicamente com sucesso!")
+                                st.success("?? Documento assinado eletronicamente com sucesso!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao atualizar base de assinaturas: {e}")
                     else:
-                        st.success("🟢 Tudo certo! Este colaborador não possui entregas pendentes.")
+                        st.success("?? Tudo certo! Este colaborador não possui entregas pendentes.")
             else:
-                st.error("❌ Código de crachá ou RE não localizado na tabela.")
+                st.error("? Código de crachá ou RE não localizado na tabela.")
 
-elif menu == "📄 Gerar Ficha de EPI (Impressão)":
-    st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
+elif menu == "?? Gerar Ficha de EPI (Impressão)":
+    st.header("?? Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
     st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável em PDF.")
     
     re_busca = st.text_input("Digite o RE do Colaborador:", key="re_busca_ficha")
@@ -500,15 +500,15 @@ elif menu == "📄 Gerar Ficha de EPI (Impressão)":
             if not df_re.empty:
                 nome_func = df_re.iloc[0]["Funcionário"]
                 depto_func = df_re.iloc[0]["Departamento"]
-                st.success(f"👤 Funcionário localizado: {nome_func} | Setor: {depto_func}")
+                st.success(f"?? Funcionário localizado: {nome_func} | Setor: {depto_func}")
                 
                 st.markdown("### Itens que constarão no documento:")
                 df_exib = df_re.copy()
                 df_exib["Data Entrega"] = df_exib["Data Entrega"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_exib[["EPI", "CA", "Quantidade", "Data Entrega", "Assinatura"]], use_container_width=True)
-                st.button("📥 Baixar Ficha de EPI Oficial (PDF)", key="btn_pdf_ficha")
+                st.button("?? Baixar Ficha de EPI Oficial (PDF)", key="btn_pdf_ficha")
             else:
-                st.error("❌ Nenhum registro de entrega foi localizado para este RE no banco de dados.")
+                st.error("? Nenhum registro de entrega foi localizado para este RE no banco de dados.")
         else:
             st.warning("Base de dados vazia.")
 
@@ -530,7 +530,7 @@ else:
 
         # Painel de Filtros Laterais
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🔍 Filtros do Painel")
+        st.sidebar.markdown("### ?? Filtros do Painel")
         
         lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist())
         deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
@@ -547,23 +547,23 @@ else:
             (df_alertas_filtrado['Status'].isin(status_selecionados))
         ]
 
-        if menu == "📊 Dashboard de Gestão":
-            st.header("📊 Painel de Indicadores Estratégicos")
+        if menu == "?? Dashboard de Gestão":
+            st.header("?? Painel de Indicadores Estratégicos")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
-            c2.metric("🟢 Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🟢 Regular"]))
-            c3.metric("🟡 Alertas Críticos", len(df_painel_filtrado[df_painel_filtrado['Status'].str.contains("🟡")]))
-            c4.metric("🔴 Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🔴 VENCIDO"]))
+            c2.metric("?? Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "?? Regular"]))
+            c3.metric("?? Alertas Críticos", len(df_painel_filtrado[df_painel_filtrado['Status'].str.contains("??")]))
+            c4.metric("?? Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "?? VENCIDO"]))
             
             st.markdown("---")
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                st.markdown("#### 📈 Situação Geral de Validade")
+                st.markdown("#### ?? Situação Geral de Validade")
                 if not df_painel_filtrado.empty:
                     df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
                     st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade', color='Status')
             with col_g2:
-                st.markdown("#### 🛡️ Modelos de EPIs Mais Entregues")
+                st.markdown("#### ??? Modelos de EPIs Mais Entregues")
                 if not df_painel_filtrado.empty:
                     df_epi_grafico = df_painel_filtrado.groupby('EPI').size().reset_index(name='Quantidade').sort_values(by='Quantidade', ascending=False)
                     st.bar_chart(data=df_epi_grafico, x='EPI', y='Quantidade')
@@ -574,11 +574,11 @@ else:
             df_export_clean["Data Vencimento"] = df_export_clean["Data Vencimento"].dt.strftime("%d/%m/%Y")
             
             csv_dados = df_export_clean.to_csv(index=False).encode('utf-8')
-            st.download_button(label="📥 Baixar Relatório de Indicadores (CSV)", data=csv_dados, file_name="Relatorio_Indicadores_EPI.csv", mime="text/csv", use_container_width=True)
+            st.download_button(label="?? Baixar Relatório de Indicadores (CSV)", data=csv_dados, file_name="Relatorio_Indicadores_EPI.csv", mime="text/csv", use_container_width=True)
 
-        elif menu == "⚠️ EPIs Vencidos/A Vencer":
-            st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
-            aba_val, aba_ass = st.tabs(["📋 Monitor de Validade (NR-6)", "✍️ Assinaturas Pendentes"])
+        elif menu == "?? EPIs Vencidos/A Vencer":
+            st.header("?? Gestão de Alertas e Pendências Logísticas")
+            aba_val, aba_ass = st.tabs(["?? Monitor de Validade (NR-6)", "?? Assinaturas Pendentes"])
             
             with aba_val:
                 if not df_painel_filtrado.empty:
@@ -593,13 +593,13 @@ else:
                     df_exib_ass["Data Entrega"] = df_exib_ass["Data Entrega"].dt.strftime("%d/%m/%Y")
                     st.dataframe(df_exib_ass[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "Data Entrega", "Status"]], use_container_width=True)
                 else:
-                    st.success("🎉 Nenhuma assinatura pendente encontrada!")
+                    st.success("?? Nenhuma assinatura pendente encontrada!")
 
-        elif menu == "📧 Disparador de Alertas (HST)":
-            st.header("📧 Central de Notificações via E-mail")
+        elif menu == "?? Disparador de Alertas (HST)":
+            st.header("?? Central de Notificações via E-mail")
             st.markdown("Gerencie as rotinas automatizadas de envio de alertas da NR-6.")
             
-            if st.button("🚀 Disparar E-mails de Alerta Agora (Forçar Envio)", use_container_width=True):
+            if st.button("?? Disparar E-mails de Alerta Agora (Forçar Envio)", use_container_width=True):
                 with st.spinner("Enviando e-mails corporativos..."):
                     resultado = processar_e_enviar_alertas_mensais(forcar=True)
                     st.success(resultado)
