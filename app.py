@@ -127,7 +127,6 @@ def construir_base_alertas():
         if not nome_func or nome_func.lower() == 'nan' or nome_func == '':
             continue
 
-        # Captura precisa do status de assinatura sem afetar strings limpas
         if "PENDENTE" in raw_data_entrega.upper() or "PEND" in raw_data_entrega.upper():
             status_assinatura = "Pendente"
             raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
@@ -153,7 +152,8 @@ def construir_base_alertas():
             f_match = df_func[df_func.iloc[:, 1].astype(str).str.replace('?', '', regex=False).str.strip().str.upper() == nome_func.upper()]
             if not f_match.empty:
                 re_vinculado = str(f_match.iloc[0, 0]).split('.')[0].strip()
-                departamento = str(f_match.iloc[0, 2]).astype(str).str.replace('?', '', regex=False).strip()
+                # Correção do AttributeError removendo .astype(str) indevido do tipo string nativo
+                departamento = str(f_match.iloc[0, 2]).replace('?', '').strip()
         
         linhas_processadas.append({
             "INDEX_ORIGINAL": idx,
