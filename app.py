@@ -519,9 +519,9 @@ elif menu == "disparador_alertas":
                 corpo_lote = urllib.parse.quote(
                     f"Prezado(a) Gestor (a) identificamos que {nome_f}, "
                     f"possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA:"
-                    f"{lista_itens}"
+                    f"{lista_itens} "
                     f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Compareça ao HST hoje."
-                    f"Atenciosamente, A Equipe de Segurança do Trabalho - SEMASA"
+                    f"Atenciosamente,  A Equipe de Segurança do Trabalho - SEMASA"
                 )
                 
                 link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
