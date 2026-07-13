@@ -44,7 +44,7 @@ df_func, df_epis = buscar_dados_planilhas()
 # ==============================================================================
 def salvar_lote_no_github(novas_linhas_lista):
     if not GITHUB_TOKEN:
-        st.error("? Erro: GITHUB_TOKEN não configurado nas Secrets.")
+        st.error("Erro: GITHUB_TOKEN não configurado nas Secrets.")
         return False
         
     url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
@@ -79,7 +79,7 @@ def salvar_lote_no_github(novas_linhas_lista):
     return req_put.status_code in [200, 201]
 
 # ==============================================================================
-# FUNÇÃO PARA GRAVARE EDITIONS/BAIXAS DE ASSINATURA
+# FUNÇÃO PARA GRAVAR EDITIONS/BAIXAS DE ASSINATURA
 # ==============================================================================
 def atualizar_csv_completo(df_novo):
     url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
@@ -144,7 +144,7 @@ def construir_base_alertas():
         dias_validade = mapa_validades.get(nome_epi, 90)
         dt_vencimento = dt_entrega_parsed + timedelta(days=dias_validade)
         dias_restantes = (dt_vencimento - hoje).days
-        status_validade = "?? VENCIDO" if dias_restantes < 0 else ("?? CRÍTICO (Até 15 dias)" if dias_restantes <= 15 else "?? Regular")
+        status_validade = "VENCIDO" if dias_restantes < 0 else ("CRITICO (Ate 15 dias)" if dias_restantes <= 15 else "Regular")
         
         re_vinculado = "N/A"
         departamento = "Não Informado"
@@ -156,17 +156,17 @@ def construir_base_alertas():
         
         linhas_processadas.append({
             "INDEX_ORIGINAL": idx,
-            "RE": re_vinculado,
-            "Funcionário": nome_func, 
-            "Departamento": departamento,
-            "EPI": nome_epi, 
-            "CA": mapa_ca.get(nome_epi, "N/A"), 
+            "RE": str(re_vinculado),
+            "Funcionário": str(nome_func), 
+            "Departamento": str(departamento),
+            "EPI": str(nome_epi), 
+            "CA": str(mapa_ca.get(nome_epi, "N/A")), 
             "Qtd": 1,
             "Data Entrega": dt_entrega_parsed, 
             "Data Vencimento": dt_vencimento,
-            "Dias Restantes": dias_restantes, 
-            "Status": status_validade, 
-            "Assinatura": status_assinatura
+            "Dias Restantes": int(dias_restantes), 
+            "Status": str(status_validade), 
+            "Assinatura": str(status_assinatura)
         })
         
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
@@ -213,7 +213,7 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
     tabela_dados = [["EPI / Descrição", "C.A.", "Qtd", "Data Entrega", "Forma de Assinatura"]]
     for _, row in df_itens.iterrows():
         dt_str = row['Data Entrega'].strftime('%d/%m/%Y') if isinstance(row['Data Entrega'], datetime) else str(row['Data Entrega'])
-        tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "?? PENDENTE (Assinar à caneta)"
+        tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "PENDENTE (Assinar à caneta)"
         tabela_dados.append([row['EPI'], row['CA'], str(row['Qtd']), dt_str, tipo_ass])
         
     t = Table(tabela_dados, colWidths=[220, 60, 40, 80, 140])
@@ -243,26 +243,31 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
 # ==============================================================================
 # MENU LATERAL INTERATIVO
 # ==============================================================================
-st.sidebar.markdown("## ?? Navegação Sistema")
-menu = st.sidebar.selectbox(
+st.sidebar.markdown("## Navegação Sistema")
+
+dict_menu = {
+    "lancar_epi": "Lançar Novos EPIs",
+    "coletar_ass": "Coletar Assinaturas Pendentes",
+    "gerar_ficha": "Gerar Ficha de EPI (Impressão)",
+    "dashboard": "Dashboard de Gestão",
+    "vencidos": "EPIs Vencidos/A Vencer"
+}
+
+opcao_selecionada = st.sidebar.selectbox(
     "Escolha a Visão:", 
-    [
-        "?? Lançar Novos EPIs", 
-        "?? Coletar Assinaturas Pendentes", 
-        "?? Gerar Ficha de EPI (Impressão)", 
-        "?? Dashboard de Gestão", 
-        "?? EPIs Vencidos/A Vencer"
-    ]
+    options=list(dict_menu.values())
 )
+
+menu = [k for k, v in dict_menu.items() if v == opcao_selecionada][0]
 
 # ==============================================================================
 # VISÃO 1: LANÇAMENTO COM SUPORTE A MÚLTIPLOS EPIS
 # ==============================================================================
-if menu == "?? Lançar Novos EPIs":
-    st.header("?? Registro de Entrega de Equipamentos de Proteção")
+if menu == "lancar_epi":
+    st.header("📝 Registro de Entrega de Equipamentos de Proteção")
     
     if df_func.empty or df_epis.empty:
-        st.warning("?? Carregando tabelas base do GitHub...")
+        st.warning("Carregando tabelas base do GitHub...")
     else:
         df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
         
@@ -278,13 +283,13 @@ if menu == "?? Lançar Novos EPIs":
         with col_f2:
             nome_funcionario = mapa_re_nome.get(re_digitado, "")
             if re_digitado and not nome_funcionario: 
-                st.error("? RE não localizado.")
+                st.error("RE não localizado.")
             elif re_digitado and nome_funcionario: 
-                st.info(f"?? Colaborador: {nome_funcionario}")
+                st.info(f"👤 Colaborador: {nome_funcionario}")
                 
         st.markdown("---")
-        st.markdown("#### ?? Autenticação e Validação")
-        bypass_nfc = st.checkbox("?? Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
+        st.markdown("#### 🔒 Autenticação e Validação")
+        bypass_nfc = st.checkbox("Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
         
         situacao_assinatura = "PENDENTE"
         
@@ -294,49 +299,49 @@ if menu == "?? Lançar Novos EPIs":
                 cracha_esperado = mapa_re_cracha.get(re_digitado, "")
                 if nfc_input == cracha_esperado:
                     situacao_assinatura = "Assinado"
-                    st.success("?? Crachá validado com sucesso!")
+                    st.success("Crachá validado com sucesso!")
                 else:
                     dono_desse_cracha = mapa_cracha_nome.get(nfc_input, "Desconhecido")
-                    st.error(f"? Este crachá pertence a '{dono_desse_cracha}'! Registro ficará PENDENTE.")
+                    st.error(f"Este crachá pertence a '{dono_desse_cracha}'! Registro ficará PENDENTE.")
         else:
-            st.info("?? Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
+            st.info("Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
             
         st.markdown("---")
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
         data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
             
         st.markdown("<br>", unsafe_allow_html=True)
-        botao_salvar = st.button("?? Gravar Lançamentos no Sistema")
+        botao_salvar = st.button("💾 Gravar Lançamentos no Sistema")
         
         if botao_salvar:
             if not re_digitado or not nome_funcionario:
-                st.error("? Digite um RE válido antes de salvar.")
+                st.error("Digite um RE válido antes de salvar.")
             elif not epis_selecionados:
-                st.error("? Selecione ao menos um EPI.")
+                st.error("Selecione ao menos um EPI.")
             else:
                 lote_linhas = []
                 for epi in epis_selecionados:
                     lote_linhas.append({
-                        0: "",                                                                       
-                        1: str(epi),                                                                 
-                        2: "",                                                                       
-                        3: "",                                                                       
-                        4: str(nome_funcionario),                                                    
+                        0: "",                                                                                   
+                        1: str(epi),                                                                             
+                        2: "",                                                                                   
+                        3: "",                                                                                   
+                        4: str(nome_funcionario),                                                                    
                         5: data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE" 
                     })
                 
                 with st.spinner("Salvando lote no GitHub..."):
                     if salvar_lote_no_github(lote_linhas):
-                        st.success(f"?? Gravado com sucesso para {nome_funcionario}!")
+                        st.success(f"Gravado com sucesso para {nome_funcionario}!")
                         st.balloons()
                     else:
-                        st.error("? Erro ao salvar no GitHub.")
+                        st.error("Erro ao salvar no GitHub.")
 
 # ==============================================================================
 # VISÃO 2: ELIMINAÇÃO DE PENDÊNCIAS PELO RE
 # ==============================================================================
-elif menu == "?? Coletar Assinaturas Pendentes":
-    st.header("?? Regularização de Assinaturas Pendentes")
+elif menu == "coletar_ass":
+    st.header("✍️ Regularização de Assinaturas Pendentes")
     st.markdown("Busque o RE do colaborador, confira os itens pendentes e aproxime o crachá do próprio trabalhador.")
     
     re_busca = st.text_input("Digite o RE do funcionário para buscar pendências:").strip()
@@ -348,14 +353,14 @@ elif menu == "?? Coletar Assinaturas Pendentes":
             df_pendentes_func = df_base_completa[(df_base_completa['RE'] == re_busca) & (df_base_completa['Assinatura'] == "Pendente")]
             
             if df_pendentes_func.empty:
-                st.success("?? Este colaborador não possui nenhuma assinatura pendente no sistema!")
+                st.success("Este colaborador não possui nenhuma assinatura pendente no sistema!")
             else:
-                st.warning(f"?? Encontradas {len(df_pendentes_func)} entregas pendentes para este RE:")
+                st.warning(f"Encontradas {len(df_pendentes_func)} entregas pendentes para este RE:")
                 df_exibir = df_pendentes_func[["EPI", "Qtd", "Data Entrega"]].copy()
                 df_exibir["Data Entrega"] = df_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_exibir, use_container_width=True)
                 
-                st.markdown("### ?? Validação de Baixa Segura")
+                st.markdown("### 🔒 Validação de Baixa Segura")
                 
                 if "input_cracha_baixa" not in st.session_state:
                     st.session_state.input_cracha_baixa = ""
@@ -375,7 +380,7 @@ elif menu == "?? Coletar Assinaturas Pendentes":
                     
                     if nfc_baixa != cracha_correto:
                         dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
-                        st.error(f"? Bloqueado: Este crachá pertence a '{dono_desse_cracha}'!")
+                        st.error(f"Bloqueado: Este crachá pertence a '{dono_desse_cracha}'!")
                     else:
                         with st.spinner("Processando assinaturas legítimas..."):
                             try:
@@ -394,7 +399,7 @@ elif menu == "?? Coletar Assinaturas Pendentes":
                                         df_raw_csv.iloc[int(idx_orig), 5] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
-                                        st.success(f"?? Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
+                                        st.success(f"Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
                                         st.balloons()
                                         st.session_state.input_cracha_baixa = ""
                                         st.rerun()
@@ -408,22 +413,22 @@ elif menu == "?? Coletar Assinaturas Pendentes":
 # ==============================================================================
 # VISÃO 3: GERAR FICHA OFICIAL DE EPI PARA IMPRESSÃO/SALVAMENTO
 # ==============================================================================
-elif menu == "?? Gerar Ficha de EPI (Impressão)":
-    st.header("?? Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
+elif menu == "gerar_ficha":
+    st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
     st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável em PDF.")
     
     re_exportar = st.text_input("Digite o RE do Colaborador:").strip()
     
     if re_exportar:
         if df_func.empty:
-            st.error("? Não foi possível carregar a tabela de funcionários para validação.")
+            st.error("Não foi possível carregar a tabela de funcionários para validação.")
         else:
             df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
             re_busca_limpo = re_exportar.split('.')[0].strip()
             f_match = df_func_limpo[df_func_limpo.iloc[:, 0].astype(str).str.split('.').str[0].str.strip() == re_busca_limpo]
             
             if f_match.empty:
-                st.error(f"? O RE {re_exportar} não foi localizado no cadastro de funcionários.")
+                st.error(f"O RE {re_exportar} não foi localizado no cadastro de funcionários.")
             else:
                 nome_oficial = str(f_match.iloc[0, 1]).strip()
                 depto_oficial = str(f_match.iloc[0, 2]).strip()
@@ -431,13 +436,12 @@ elif menu == "?? Gerar Ficha de EPI (Impressão)":
                 if df_base_completa.empty:
                     st.info("Nenhum histórico geral de EPIs encontrado no sistema.")
                 else:
-                    # Aqui usamos a base com o histórico completo do trabalhador
                     df_historico_func = df_base_completa[df_base_completa['Funcionário'].str.strip().str.upper() == nome_oficial.upper()]
                     
                     if df_historico_func.empty:
-                        st.warning(f"?? Funcionário localizado: **{nome_oficial}** ({depto_oficial}), mas ele ainda não possui nenhuma entrega registrada.")
+                        st.warning(f"Funcionário localizado: **{nome_oficial}** ({depto_oficial}), mas ele ainda não possui nenhuma entrega registrada.")
                     else:
-                        st.success(f"?? **Funcionário localizado:** {nome_oficial} | **Setor:** {depto_oficial}")
+                        st.success(f"Funcionário localizado: {nome_oficial} | Setor: {depto_oficial}")
                         st.markdown("### Itens que constarão no documento:")
                         
                         df_preview = df_historico_func[["EPI", "CA", "Qtd", "Data Entrega", "Assinatura"]].copy()
@@ -448,25 +452,22 @@ elif menu == "?? Gerar Ficha de EPI (Impressão)":
                         pdf_data = gerar_pdf_ficha(re_exportar, nome_oficial, depto_oficial, df_historico_func)
                         
                         st.download_button(
-                            label="?? Baixar Ficha de EPI Oficial (PDF)",
+                            label="📥 Baixar Ficha de EPI Oficial (PDF)",
                             data=pdf_data,
                             file_name=f"Ficha_EPI_{re_exportar}_{nome_oficial.replace(' ', '_')}.pdf",
                             mime="application/pdf"
                         )
 
 # ==============================================================================
-# VISÕES DO DASHBOARD E ALERTAS (GRÁFICOS DESMEMBRADOS E FILTROS)
+# VISÕES DO DASHBOARD E ALERTAS (DADOS CONSOLIDADOS E ISENTOS DE REGEX)
 # ==============================================================================
 else:
     if df_base_completa.empty:
         st.warning("Aguardando a sincronização dos dados...")
     else:
-        # 1. Aplicação estrita da regra de negócio: Vencimento baseado apenas na última entrega ativa
         df_alertas_filtrado = df_base_completa.sort_values(by="Data Entrega", ascending=True)
         df_alertas_filtrado = df_alertas_filtrado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
 
-        # Tenta trazer o Cargo do funcionário para a base de alertas cruzando com df_func
-        # Considerando: col 0 = RE, col 1 = Nome, col 2 = Departamento, col 3 = Cargo
         if not df_func.empty and len(df_func.columns) > 3:
             mapa_cargos = {str(row.iloc[1]).strip().upper(): str(row.iloc[3]).strip() for _, row in df_func.iterrows()}
             df_alertas_filtrado['Cargo'] = df_alertas_filtrado['Funcionário'].str.strip().str.upper().map(mapa_cargos).fillna("Não Informado")
@@ -477,56 +478,57 @@ else:
         # PAINEL DE FILTROS DINÂMICOS NA BARRA LATERAL
         # ==============================================================================
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### ?? Filtros do Painel")
+        st.sidebar.markdown("### Filtros do Painel")
         
-        # Filtro de Departamento/Setor
-        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist())
+        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().astype(str).unique().tolist())
         deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
         
-        # Filtro de Cargo
-        lista_cargos = sorted(df_alertas_filtrado['Cargo'].dropna().unique().tolist())
+        lista_cargos = sorted(df_alertas_filtrado['Cargo'].dropna().astype(str).unique().tolist())
         cargos_selecionados = st.sidebar.multiselect("Filtrar por Cargo:", options=lista_cargos, default=lista_cargos)
         
-        # Filtro de Status de Validade
-        lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist())
+        lista_status = sorted(df_alertas_filtrado['Status'].dropna().astype(str).unique().tolist())
         status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
         
-        # Aplicando os filtros combinados ao Dataframe do Dashboard
+        # Filtro exato via .isin() que elimina totalmente erros no PyArrow
         df_painel_filtrado = df_alertas_filtrado[
             (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
             (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
             (df_alertas_filtrado['Status'].isin(status_selecionados))
-        ]
+        ].copy()
 
         # ==============================================================================
         # VISÃO: DASHBOARD DE GESTÃO INTERATIVO
         # ==============================================================================
-        if menu == "?? Dashboard de Gestão":
-            st.header("?? Painel de Indicadores Estratégicos")
+        if menu == "dashboard":
+            st.header("📊 Painel de Indicadores Estratégicos")
             st.markdown("Indicadores de distribuição física e conformidade legal de fácil entendimento.")
             
-            # Cards de Métricas Principais
+            # Cálculo de métricas usando igualdade direta (sem .str.contains)
+            qtd_total = len(df_painel_filtrado)
+            qtd_regulares = len(df_painel_filtrado[df_painel_filtrado['Status'] == "Regular"])
+            qtd_criticos = len(df_painel_filtrado[df_painel_filtrado['Status'] == "CRITICO (Ate 15 dias)"])
+            qtd_vencidos = len(df_painel_filtrado[df_painel_filtrado['Status'] == "VENCIDO"])
+
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
-            c2.metric("?? Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "?? Regular"]))
-            c3.metric("?? Alertas Críticos", len(df_painel_filtrado[df_painel_filtrado['Status'].str.contains("??")]))
-            c4.metric("?? Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "?? VENCIDO"]))
+            c1.metric("EPIs Ativos Monitorados", qtd_total)
+            c2.metric("Itens Regulares", qtd_regulares)
+            c3.metric("Alertas Críticos", qtd_criticos)
+            c4.metric("Total Vencidos", qtd_vencidos)
             
             st.markdown("---")
             
-            # Primeira Linha de Gráficos: Status e Modelos de EPI
             col_g1, col_g2 = st.columns(2)
             
             with col_g1:
-                st.markdown("#### ?? Situação Geral de Validade")
+                st.markdown("#### Situação Geral de Validade")
                 if not df_painel_filtrado.empty:
                     df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
-                    st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade', color='Status')
+                    st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade')
                 else:
                     st.info("Sem dados para exibir o gráfico de status.")
                     
             with col_g2:
-                st.markdown("#### ??? Modelos de EPIs Mais Entregues")
+                st.markdown("#### Modelos de EPIs Mais Entregues")
                 if not df_painel_filtrado.empty:
                     df_epi_grafico = df_painel_filtrado.groupby('EPI').size().reset_index(name='Quantidade').sort_values(by='Quantidade', ascending=False)
                     st.bar_chart(data=df_epi_grafico, x='EPI', y='Quantidade')
@@ -535,11 +537,10 @@ else:
             
             st.markdown("---")
             
-            # Segunda Linha de Gráficos: Desmembrados por Departamento e por Cargo (Sem empilhamento)
             col_g3, col_g4 = st.columns(2)
             
             with col_g3:
-                st.markdown("#### ?? Volume de EPIs por Departamento")
+                st.markdown("#### Volume de EPIs por Departamento")
                 if not df_painel_filtrado.empty:
                     df_depto_grafico = df_painel_filtrado.groupby('Departamento').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
                     st.bar_chart(data=df_depto_grafico, x='Departamento', y='Quantidade de EPIs')
@@ -547,18 +548,16 @@ else:
                     st.info("Sem dados para exibir o gráfico de departamentos.")
                     
             with col_g4:
-                st.markdown("#### ?? Volume de EPIs por Cargo")
+                st.markdown("#### Volume de EPIs por Cargo")
                 if not df_painel_filtrado.empty:
                     df_cargo_grafico = df_painel_filtrado.groupby('Cargo').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
                     st.bar_chart(data=df_cargo_grafico, x='Cargo', y='Quantidade de EPIs')
                 else:
                     st.info("Sem dados para exibir o gráfico de cargos.")
-                    
-            st.markdown("---")
             
-            # Seção de Exportação para Apresentações e E-mails
-            st.markdown("### ?? Central de Exportação de Dados")
-            st.markdown("Baixe os dados consolidados e filtrados acima para anexar em e-mails corporativos ou montar seus relatórios e apresentações de slides.")
+            st.markdown("---")
+            st.markdown("### Central de Exportação de Dados")
+            st.markdown("Baixe os dados consolidados e filtrados acima para anexar em e-mails corporativos ou montar seus relatórios.")
             
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
@@ -568,101 +567,25 @@ else:
                 
                 csv_dados = df_export_clean.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="?? Baixar Relatório de Indicadores (CSV)",
+                    label="📥 Baixar Relatório de Indicadores (CSV)",
                     data=csv_dados,
                     file_name=f"Relatorio_Indicadores_EPI_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
             with col_exp2:
-                st.info("?? **Dica para Apresentações:** Você pode tirar um print dos gráficos limpos usando o atalho `Win + Shift + S` para colar direto nos seus slides do PowerPoint ou e-mails!")
+                st.info("💡 **Dica para Apresentações:** Você pode tirar um print dos gráficos limpos usando o atalho `Win + Shift + S` para colar direto nos seus slides!")
 
         # ==============================================================================
-        # VISÃO: MONITOR DE EPIS VENCIDOS / A VENCER
+        # VISÃO: EPIS VENCIDOS / A VENCER
         # ==============================================================================
-        elif menu == "?? EPIs Vencidos/A Vencer":
-            st.header("?? Gestão de Alertas e Pendências Logísticas")
-            st.markdown("Listagem operacional detalhada para ações corretivas imediatas de troca ou coleta de assinaturas.")
-            
-            aba_val, aba_ass = st.tabs(["?? Monitor de Validade (NR-6)", "?? Assinaturas Pendentes"])
-            
-            with aba_val:
-                if not df_painel_filtrado.empty:
-                    df_exib_val = df_painel_filtrado.copy()
-                    df_exib_val["Data Entrega"] = df_exib_val["Data Entrega"].dt.strftime("%d/%m/%Y")
-                    df_exib_val["Data Vencimento"] = df_exib_val["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                    
-                    st.dataframe(df_exib_val[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "CA", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]].sort_values(by="Dias Restantes"), use_container_width=True)
-                    
-                    csv_Valores = df_exib_val.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="?? Exportar Lista Operacional de Prazos (CSV)",
-                        data=csv_Valores,
-                        file_name=f"Planilha_Prazos_EPI_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info("Nenhum item pendente de validação nos filtros selecionados.")
-                    
-            with aba_ass:
-                df_exib_ass = df_painel_filtrado[df_painel_filtrado['Assinatura'] == "Pendente"].copy()
-                if not df_exib_ass.empty:
-                    df_exib_ass["Data Entrega"] = df_exib_ass["Data Entrega"].dt.strftime("%d/%m/%Y")
-                    df_exib_ass["Data Vencimento"] = df_exib_ass["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                    
-                    st.dataframe(df_exib_ass[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "Data Entrega", "Status"]], use_container_width=True)
-                    
-                    csv_ass = df_exib_ass.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="?? Exportar Lista de Pendentes de Assinatura (CSV)",
-                        data=csv_ass,
-                        file_name=f"Funcionarios_Sem_Assinatura_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.success("?? Nenhuma assinatura pendente de crachá NFC encontrada para os filtros atuais!")
-        # ==============================================================================
-        # VISÃO: MONITOR DE EPIS VENCIDOS / A VENCER
-        # ==============================================================================
-        elif menu == "?? EPIs Vencidos/A Vencer":
-            st.header("?? Gestão de Alertas e Pendências Logísticas")
-            st.markdown("Listagem operacional detalhada para ações corretivas imediatas de troca ou coleta de assinaturas.")
-            
-            aba_val, aba_ass = st.tabs(["?? Monitor de Validade (NR-6)", "?? Assinaturas Pendentes"])
-            
-            with aba_val:
-                if not df_painel_filtrado.empty:
-                    df_exib_val = df_painel_filtrado.copy()
-                    df_exib_val["Data Entrega"] = df_exib_val["Data Entrega"].dt.strftime("%d/%m/%Y")
-                    df_exib_val["Data Vencimento"] = df_exib_val["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                    
-                    st.dataframe(df_exib_val[["RE", "Funcionário", "Departamento", "EPI", "CA", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]].sort_values(by="Dias Restantes"), use_container_width=True)
-                    
-                    # Botão dedicado para baixar a lista de compras/trocas de EPIs baseado no que foi filtrado
-                    csv_Valores = df_exib_val.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="?? Exportar Lista Operacional de Prazos (CSV)",
-                        data=csv_Valores,
-                        file_name=f"Planilha_Prazos_EPI_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info("Nenhum item pendente de validação nos filtros selecionados.")
-                    
-            with aba_ass:
-                df_exib_ass = df_painel_filtrado[df_painel_filtrado['Assinatura'] == "Pendente"].copy()
-                if not df_exib_ass.empty:
-                    df_exib_ass["Data Entrega"] = df_exib_ass["Data Entrega"].dt.strftime("%d/%m/%Y")
-                    df_exib_ass["Data Vencimento"] = df_exib_ass["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                    
-                    st.dataframe(df_exib_ass[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Status"]], use_container_width=True)
-                    
-                    csv_ass = df_exib_ass.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="?? Exportar Lista de Pendentes de Assinatura (CSV)",
-                        data=csv_ass,
-                        file_name=f"Funcionarios_Sem_Assinatura_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.success("?? Nenhuma assinatura pendente de crachá NFC encontrada para os filtros atuais!")
+        elif menu == "vencidos":
+            st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
+            st.markdown("Lista completa detalhando os prazos de validade regulamentares dos EPIs ativos.")
+            if not df_painel_filtrado.empty:
+                df_venc_exibir = df_painel_filtrado.copy()
+                df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
+                df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
+            else:
+                st.info("Nenhum registro com os filtros selecionados.")
