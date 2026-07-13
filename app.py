@@ -95,7 +95,7 @@ def atualizar_csv_completo(df_novo):
     return False
 
 # ==============================================================================
-# CONSTRUÇÃO DA BASE COMPLETA (HISTÓRICO AUDITÁVEL)
+# CONSTRUÇÃO DA BASE COMPLETA (HISTÓRICO AUDITÁVEL) - DETECÇÃO DINÂMICA
 # ==============================================================================
 def construir_base_alertas():
     try:
@@ -116,23 +116,35 @@ def construir_base_alertas():
         mapa_ca = {str(row.iloc[0]).replace('?', '').strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
     for idx, row in df_hist.iterrows():
-        total_cols = len(row)
-        if total_cols < 2:
-            continue
-            
-        nome_epi = str(row.iloc[1]).replace('?', '').strip() if total_cols >= 6 else str(row.iloc[0]).replace('?', '').strip()
-        nome_func = str(row.iloc[4]).replace('?', '').strip() if total_cols >= 5 else (str(row.iloc[1]).replace('?', '').strip() if total_cols >= 2 else "")
-        raw_data_entrega = str(row.iloc[5]).strip() if total_cols >= 6 else (str(row.iloc[2]).strip() if total_cols >= 3 else "PENDENTE")
+        # Transforma a linha inteira em texto para varredura flexível
+        linha_completa_texto = " ".join([str(val).upper() for val in row.values if pd.notnull(val)])
         
-        if not nome_func or nome_func.lower() == 'nan' or nome_func == '':
-            continue
-
-        if "PENDENTE" in raw_data_entrega.upper() or "PEND" in raw_data_entrega.upper():
+        # 1. Identificação Dinâmica do Status da Assinatura
+        if "PENDENTE" in linha_completa_texto or "PEND" in linha_completa_texto:
             status_assinatura = "Pendente"
             raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
         else:
             status_assinatura = "Assinado"
-            raw_data_entrega_limpa = raw_data_entrega.replace('?', '').strip()
+            # Tenta pegar a última coluna como data padrão de entrega se for um histórico normal
+            raw_data_entrega_limpa = str(row.iloc[-1]).strip() if len(row) > 0 else datetime.now().strftime("%d/%m/%Y")
+            
+        # 2. Identificação Dinâmica do Funcionário e do EPI baseado na largura do arquivo
+        total_cols = len(row)
+        if total_cols >= 6:
+            nome_epi = str(row.iloc[1]).replace('?', '').strip()
+            nome_func = str(row.iloc[4]).replace('?', '').strip()
+            if status_assinatura == "Assinado":
+                raw_data_entrega_limpa = str(row.iloc[5]).strip()
+        elif total_cols >= 3:
+            nome_epi = str(row.iloc[0]).replace('?', '').strip()
+            nome_func = str(row.iloc[1]).replace('?', '').strip()
+            if status_assinatura == "Assinado":
+                raw_data_entrega_limpa = str(row.iloc[2]).strip()
+        else:
+            continue
+
+        if not nome_func or nome_func.lower() == 'nan' or nome_func == '':
+            continue
             
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega_limpa, errors='coerce', dayfirst=True)
         if pd.isnull(dt_entrega_parsed):
@@ -149,7 +161,6 @@ def construir_base_alertas():
         re_vinculado = "N/A"
         departamento = "Não Informado"
         if not df_func.empty:
-            # Tratamento robusto para ignorar espaços extras e variação de maiúsculas/minúsculas no cruzamento
             nome_func_busca = " ".join(nome_func.upper().split())
             f_match = df_func[df_func.iloc[:, 1].astype(str).str.replace('?', '', regex=False).apply(lambda x: " ".join(str(x).upper().split())) == nome_func_busca]
             
@@ -330,7 +341,7 @@ if menu == "lancar_epi":
                         2: "",                                                                                   
                         3: "",                                                                                   
                         4: str(nome_funcionario),                                                                    
-                        5: data_entrega_sel.strftime("%Y-%m-%d") if situacao_assinatura == "Assinado" else "PENDENTE" 
+                        5: "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d")
                     })
                 
                 with st.spinner("Salvando lote no GitHub..."):
@@ -353,6 +364,7 @@ elif menu == "coletar_ass":
         if df_base_completa.empty:
             st.info("Nenhum histórico encontrado.")
         else:
+            # Filtro exato pelo RE e status pendente
             df_pendentes_func = df_base_completa[(df_base_completa['RE'] == re_busca) & (df_base_completa['Assinatura'] == "Pendente")]
             
             if df_pendentes_func.empty:
@@ -398,8 +410,13 @@ elif menu == "coletar_ass":
                                     indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
                                     data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                     
+                                    # Encontra dinamicamente em qual coluna da linha está escrito "PENDENTE" e atualiza com a data
                                     for idx_orig in indices_para_alterar:
-                                        df_raw_csv.iloc[int(idx_orig), 5] = data_hoje_str
+                                        linha_idx = int(idx_orig)
+                                        for col_idx in range(len(df_raw_csv.columns)):
+                                            celula_val = str(df_raw_csv.iloc[linha_idx, col_idx]).upper()
+                                            if "PENDENTE" in celula_val or "PEND" in celula_val:
+                                                df_raw_csv.iloc[linha_idx, col_idx] = data_hoje_str
                                     
                                     if atualizar_csv_completo(df_raw_csv):
                                         st.success(f"Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
