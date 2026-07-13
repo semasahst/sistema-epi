@@ -379,24 +379,31 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
     return buffer
 
 # ==============================================================================
-# MENU LATERAL DO SISTEMA (ALINHADO E COMPLETO)
+# MENU LATERAL DO SISTEMA (SEGURO CONTRA ERROS DE EMOTICON / CODIFICAÇÃO)
 # ==============================================================================
-menu = st.sidebar.selectbox(
-    "Escolha a Visão:", 
-    [
-        "?? Lançar Novos EPIs", 
-        "?? Coletar Assinaturas Pendentes", 
-        "?? Gerar Ficha de EPI (Impressão)", 
-        "?? Dashboard de Gestão", 
-        "?? EPIs Vencidos/A Vencer",
-        "?? Disparador de Alertas (HST)"
-    ]
+# Criamos um mapeamento limpo para garantir que a validação nunca quebre
+opcoes_menu = {
+    "Lancar Novos EPIs": "📝 Lançar Novos EPIs",
+    "Coletar Assinaturas": "✍️ Coletar Assinaturas Pendentes",
+    "Gerar Ficha": "📄 Gerar Ficha de EPI (Impressão)",
+    "Dashboard": "📊 Dashboard de Gestão",
+    "EPIs Vencidos": "⚠️ EPIs Vencidos/A Vencer",
+    "Disparador Alertas": "📧 Disparador de Alertas (HST)"
+}
+
+# O selectbox mostra o texto, mas nós vamos avaliar a chave interna (sem emojis)
+selecao_lateral = st.sidebar.selectbox(
+    "Escolha a Visão:",
+    options=list(opcoes_menu.values())
 )
 
+# Descobre qual é a chave interna segura correspondente à seleção
+menu = [chave for chave, valor in opcoes_menu.items() if valor == selecao_lateral][0]
+
 # ==============================================================================
-# EXECUÇÃO DAS VISÕES DO SISTEMA (PROJETADO CONTRA KEYERROR)
+# EXECUÇÃO DAS VISÕES DO SISTEMA (VALIDAÇÃO VIA CHAVE INTERNA LIMPA)
 # ==============================================================================
-if menu == "📝 Lançar Novos EPIs":
+if menu == "Lancar Novos EPIs":
     st.header("📝 Lançamento e Entrega de EPIs")
     st.markdown("Registre novos fornecimentos de Equipamentos de Proteção Individual em conformidade com a NR-6.")
     
@@ -406,7 +413,6 @@ if menu == "📝 Lançar Novos EPIs":
             re_novo = st.text_input("RE do Colaborador (Apenas números):")
             nome_sugerido = ""
             if re_novo and 'df_func' in locals() and not df_func.empty:
-                # Busca inteligente independente de maiúsculas/minúsculas
                 linhas_f = df_func[df_func.iloc[:, 0].astype(str).str.strip() == str(re_novo).strip()]
                 if not linhas_f.empty:
                     nome_sugerido = str(linhas_f.iloc[0, 1]).strip()
@@ -415,19 +421,11 @@ if menu == "📝 Lançar Novos EPIs":
             depto_novo = st.selectbox("Departamento / Setor:", ["Administrativo", "Logística", "Manutenção", "Operações", "DRS", "GRH", "Outros"])
         
         with col2:
-            # Lista completa e oficial de EPIs cadastrados na autarquia
             epi_novo = st.selectbox("Equipamento (EPI):", [
-                "Avental em Kevlar", 
-                "Botina de Segurança", 
-                "Capa de Chuva", 
-                "Capacete", 
-                "Luva Agentes Mecânicos", 
-                "Luva Isolante", 
-                "Protetor Auricular Plug", 
-                "Sapato de Segurança",
-                "Bota de PVC",
-                "Luva de Vaqueta",
-                "Avental em Raspa"
+                "Avental em Kevlar", "Botina de Segurança", "Capa de Chuva", 
+                "Capacete", "Luva Agentes Mecânicos", "Luva Isolante", 
+                "Protetor Auricular Plug", "Sapato de Segurança", 
+                "Bota de PVC", "Luva de Vaqueta", "Avental em Raspa"
             ])
             ca_novo = st.text_input("Número do C.A. (Certificado de Aprovação):")
             qtd_nova = st.number_input("Quantidade Entregue:", min_value=1, value=1, step=1)
@@ -463,14 +461,13 @@ if menu == "📝 Lançar Novos EPIs":
                 except Exception as e:
                     st.error(f"Erro ao salvar arquivo físico: {e}")
 
-elif menu == "✍️ Coletar Assinaturas Pendentes":
+elif menu == "Coletar Assinaturas":
     st.header("✍️ Registro de Assinatura Eletrônica via Crachá NFC")
     st.markdown("Aproxime o cartão/crachá físico do colaborador no leitor USB conectado para assinar digitalmente.")
     
     uid_leitor = st.text_input("Aguardando leitura do Sensor NFC (Posicione o Crachá ou digite o RE):", key="nfc_uid_input")
     
     if uid_leitor:
-        # Busca o funcionário pelo RE ou UID do cartão de forma segura
         re_func = str(uid_leitor).strip()
         nome_func = "Colaborador"
         
@@ -482,10 +479,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
         st.info(f"👤 Colaborador Identificado: **{nome_func} (RE: {re_func})**")
         
         if not df_base_completa.empty:
-            # Filtro tolerante a variações na coluna RE
             col_re = [c for c in df_base_completa.columns if 'RE' in str(c).upper()][0]
-            col_ass = [c for c in df_base_completa.columns if 'ASSINATURA' in str(c).upper() or 'PENDENTE' in str(c).upper()]
-            col_ass = col_ass[0] if col_ass else 'Assinatura'
             
             if col_re in df_base_completa.columns:
                 pendencias = df_base_completa[
@@ -495,14 +489,12 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 
                 if not pendencias.empty:
                     st.warning(f"Existe(m) {len(pendencias)} EPI(s) aguardando assinatura jurídica de recebimento.")
-                    # Exibe de forma segura sem chance de KeyError
                     colunas_exibir = [c for c in ['EPI', 'CA', 'Quantidade', 'Data Entrega', 'Status'] if c in pendencias.columns]
                     st.dataframe(pendencias[colunas_exibir], use_container_width=True)
                     
                     if st.button("✍️ Confirmar Assinatura Digital (NFC Validado)", use_container_width=True, type="primary"):
                         try:
                             df_csv_fisico = pd.read_csv("respostas.csv", encoding='utf-8')
-                            # Padroniza nomes das colunas temporariamente para a edição externa
                             df_csv_fisico.columns = [c.replace('Funcion-rio', 'Funcionário').strip() for c in df_csv_fisico.columns]
                             
                             mask = (df_csv_fisico["RE"].astype(str).str.strip() == re_func) & (df_csv_fisico["Assinatura"].astype(str).str.upper().str.contains("PENDENTE"))
@@ -516,7 +508,7 @@ elif menu == "✍️ Coletar Assinaturas Pendentes":
                 else:
                     st.success("🟢 Tudo certo! Este colaborador não possui entregas pendentes de assinatura.")
 
-elif menu == "📄 Gerar Ficha de EPI (Impressão)":
+elif menu == "Gerar Ficha":
     st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
     st.markdown("Digite o RE para consolidar todo o histórico do trabalhador e gerar a ficha auditável.")
     
@@ -531,8 +523,6 @@ elif menu == "📄 Gerar Ficha de EPI (Impressão)":
                 
                 st.markdown("### Itens que constarão no documento:")
                 df_exib = df_re.copy()
-                
-                # Mapeamento dinâmico para evitar o KeyError se a coluna vier diferente do banco
                 colunas_desejadas = ["EPI", "CA", "Quantidade", "Data Entrega", "Assinatura"]
                 colunas_existentes = [col for col in colunas_desejadas if col in df_exib.columns]
                 
@@ -550,7 +540,7 @@ elif menu == "📄 Gerar Ficha de EPI (Impressão)":
             st.warning("Base de dados vazia.")
 
 # ==============================================================================
-# VISÕES DO VISUALIZADOR GERAL E DASHBOARDS (MANTIDOS SEGUROS)
+# VISÕES GERAIS E RELATÓRIOS
 # ==============================================================================
 else:
     if df_base_completa.empty:
@@ -572,31 +562,35 @@ else:
         lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist()) if 'Departamento' in df_alertas_filtrado.columns else []
         deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
         
-        lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist()) if 'Status' in df_alertas_filtrado.columns else []
+        col_status = [c for c in df_alertas_filtrado.columns if 'STATUS' in str(c).upper()]
+        lista_status = sorted(df_alertas_filtrado[col_status[0]].dropna().unique().tolist()) if col_status else []
         status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
         
-        df_painel_filtrado = df_alertas_filtrado[
-            (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
-            (df_alertas_filtrado['Status'].isin(status_selecionados))
-        ]
+        # Filtro seguro das visões
+        df_painel_filtrado = df_alertas_filtrado.copy()
+        if 'Departamento' in df_painel_filtrado.columns and deptos_selecionados:
+            df_painel_filtrado = df_painel_filtrado[df_painel_filtrado['Departamento'].isin(deptos_selecionados)]
+        if col_status and status_selecionados:
+            df_painel_filtrado = df_painel_filtrado[df_painel_filtrado[col_status[0]].isin(status_selecionados)]
 
-        if menu == "📊 Dashboard de Gestão":
+        if menu == "Dashboard":
             st.header("📊 Painel de Indicadores Estratégicos")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
-            c2.metric("🟢 Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "🟢 Regular"]) if 'Status' in df_painel_filtrado.columns else 0)
+            if col_status:
+                c2.metric("🟢 Itens Regulares", len(df_painel_filtrado[df_painel_filtrado[col_status[0]].astype(str).str.contains("Regular|🟢")]))
             
             st.markdown("---")
-            if not df_painel_filtrado.empty and 'Status' in df_painel_filtrado.columns:
-                df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
-                st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade')
+            if not df_painel_filtrado.empty and col_status:
+                df_status_grafico = df_painel_filtrado.groupby(col_status[0]).size().reset_index(name='Quantidade')
+                st.bar_chart(data=df_status_grafico, x=col_status[0], y='Quantidade')
 
-        elif menu == "⚠️ EPIs Vencidos/A Vencer":
+        elif menu == "EPIs Vencidos":
             st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
             if not df_painel_filtrado.empty:
                 st.dataframe(df_painel_filtrado, use_container_width=True)
 
-        elif menu == "📧 Disparador de Alertas (HST)":
+        elif menu == "Disparador Alertas":
             st.header("📧 Central de Notificações via E-mail")
             if st.button("🚀 Disparar E-mails de Alerta Agora (Forçar Envio)", use_container_width=True):
                 with st.spinner("Enviando e-mails corporativos..."):
