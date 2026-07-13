@@ -149,10 +149,12 @@ def construir_base_alertas():
         re_vinculado = "N/A"
         departamento = "Não Informado"
         if not df_func.empty:
-            f_match = df_func[df_func.iloc[:, 1].astype(str).str.replace('?', '', regex=False).str.strip().str.upper() == nome_func.upper()]
+            # Tratamento robusto para ignorar espaços extras e variação de maiúsculas/minúsculas no cruzamento
+            nome_func_busca = " ".join(nome_func.upper().split())
+            f_match = df_func[df_func.iloc[:, 1].astype(str).str.replace('?', '', regex=False).apply(lambda x: " ".join(str(x).upper().split())) == nome_func_busca]
+            
             if not f_match.empty:
                 re_vinculado = str(f_match.iloc[0, 0]).split('.')[0].strip()
-                # Correção do AttributeError removendo .astype(str) indevido do tipo string nativo
                 departamento = str(f_match.iloc[0, 2]).replace('?', '').strip()
         
         linhas_processadas.append({
