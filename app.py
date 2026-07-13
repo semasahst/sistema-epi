@@ -79,7 +79,7 @@ def salvar_lote_no_github(novas_linhas_lista):
     return req_put.status_code in [200, 201]
 
 # ==============================================================================
-# FUNÇÃO PARA GRAVAR EDITIONS/BAIXAS DE ASSINATURA
+# FUNÇÃO PARA GRAVAÇÃO DE BAIXAS DE ASSINATURA
 # ==============================================================================
 def atualizar_csv_completo(df_novo):
     url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
@@ -105,34 +105,35 @@ def construir_base_alertas():
         
     if df_hist.empty:
         return pd.DataFrame()
-        
+
     linhas_processadas = []
     hoje = pd.to_datetime(datetime.now().date())
     
     mapa_validades = {}
     mapa_ca = {}
     if not df_epis.empty:
-        mapa_validades = {str(row.iloc[0]).strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
-        mapa_ca = {str(row.iloc[0]).strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
+        mapa_validades = {str(row.iloc[0]).replace('?', '').strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
+        mapa_ca = {str(row.iloc[0]).replace('?', '').strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
     for idx, row in df_hist.iterrows():
         total_cols = len(row)
         if total_cols < 2:
             continue
             
-        nome_epi = str(row.iloc[0]).strip() if total_cols < 6 else str(row.iloc[1]).strip()
-        nome_func = str(row.iloc[4]).strip() if total_cols >= 5 else (str(row.iloc[1]).strip() if total_cols >= 2 else "")
+        nome_epi = str(row.iloc[1]).replace('?', '').strip() if total_cols >= 6 else str(row.iloc[0]).replace('?', '').strip()
+        nome_func = str(row.iloc[4]).replace('?', '').strip() if total_cols >= 5 else (str(row.iloc[1]).replace('?', '').strip() if total_cols >= 2 else "")
         raw_data_entrega = str(row.iloc[5]).strip() if total_cols >= 6 else (str(row.iloc[2]).strip() if total_cols >= 3 else "PENDENTE")
         
         if not nome_func or nome_func.lower() == 'nan' or nome_func == '':
             continue
 
-        if "PENDENTE" in raw_data_entrega.upper():
+        # Captura precisa do status de assinatura sem afetar strings limpas
+        if "PENDENTE" in raw_data_entrega.upper() or "PEND" in raw_data_entrega.upper():
             status_assinatura = "Pendente"
             raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
         else:
             status_assinatura = "Assinado"
-            raw_data_entrega_limpa = raw_data_entrega
+            raw_data_entrega_limpa = raw_data_entrega.replace('?', '').strip()
             
         dt_entrega_parsed = pd.to_datetime(raw_data_entrega_limpa, errors='coerce', dayfirst=True)
         if pd.isnull(dt_entrega_parsed):
@@ -149,24 +150,24 @@ def construir_base_alertas():
         re_vinculado = "N/A"
         departamento = "Não Informado"
         if not df_func.empty:
-            f_match = df_func[df_func.iloc[:, 1].astype(str).str.strip().str.upper() == nome_func.upper()]
+            f_match = df_func[df_func.iloc[:, 1].astype(str).str.replace('?', '', regex=False).str.strip().str.upper() == nome_func.upper()]
             if not f_match.empty:
                 re_vinculado = str(f_match.iloc[0, 0]).split('.')[0].strip()
-                departamento = str(f_match.iloc[0, 2]).strip()
+                departamento = str(f_match.iloc[0, 2]).astype(str).str.replace('?', '', regex=False).strip()
         
         linhas_processadas.append({
             "INDEX_ORIGINAL": idx,
-            "RE": str(re_vinculado),
-            "Funcionário": str(nome_func), 
-            "Departamento": str(departamento),
-            "EPI": str(nome_epi), 
-            "CA": str(mapa_ca.get(nome_epi, "N/A")), 
+            "RE": re_vinculado,
+            "Funcionário": nome_func, 
+            "Departamento": departamento,
+            "EPI": nome_epi, 
+            "CA": mapa_ca.get(nome_epi, "N/A"), 
             "Qtd": 1,
             "Data Entrega": dt_entrega_parsed, 
             "Data Vencimento": dt_vencimento,
-            "Dias Restantes": int(dias_restantes), 
-            "Status": str(status_validade), 
-            "Assinatura": str(status_assinatura)
+            "Dias Restantes": dias_restantes, 
+            "Status": status_validade, 
+            "Assinatura": status_assinatura
         })
         
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
@@ -243,18 +244,18 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
 # ==============================================================================
 # MENU LATERAL INTERATIVO
 # ==============================================================================
-st.sidebar.markdown("## Navegação Sistema")
+st.sidebar.markdown("## Navigation")
 
 dict_menu = {
-    "lancar_epi": "Lançar Novos EPIs",
+    "lancar_epi": "Lancar Novos EPIs",
     "coletar_ass": "Coletar Assinaturas Pendentes",
-    "gerar_ficha": "Gerar Ficha de EPI (Impressão)",
-    "dashboard": "Dashboard de Gestão",
+    "gerar_ficha": "Gerar Ficha de EPI (Impressao)",
+    "dashboard": "Dashboard de Gestao",
     "vencidos": "EPIs Vencidos/A Vencer"
 }
 
 opcao_selecionada = st.sidebar.selectbox(
-    "Escolha a Visão:", 
+    "Escolha a Visao:", 
     options=list(dict_menu.values())
 )
 
@@ -271,11 +272,11 @@ if menu == "lancar_epi":
     else:
         df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
         
-        mapa_re_nome = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows()}
+        mapa_re_nome = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[1]).replace('?', '').strip() for _, row in df_func_limpo.iterrows()}
         mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
-        mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
+        mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).replace('?', '').strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
         
-        lista_epis = sorted(df_epis.iloc[:, 0].dropna().unique().tolist())
+        lista_epis = sorted(df_epis.iloc[:, 0].dropna().astype(str).str.replace('?', '', regex=False).unique().tolist())
         
         col_f1, col_f2 = st.columns(2)
         with col_f1:
@@ -374,7 +375,7 @@ elif menu == "coletar_ass":
                 if nfc_baixa:
                     df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
                     mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
-                    mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
+                    mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).replace('?', '').strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
                     
                     cracha_correto = mapa_re_cracha.get(re_busca, "")
                     
@@ -430,8 +431,8 @@ elif menu == "gerar_ficha":
             if f_match.empty:
                 st.error(f"O RE {re_exportar} não foi localizado no cadastro de funcionários.")
             else:
-                nome_oficial = str(f_match.iloc[0, 1]).strip()
-                depto_oficial = str(f_match.iloc[0, 2]).strip()
+                nome_oficial = str(f_match.iloc[0, 1]).replace('?', '').strip()
+                depto_oficial = str(f_match.iloc[0, 2]).replace('?', '').strip()
                 
                 if df_base_completa.empty:
                     st.info("Nenhum histórico geral de EPIs encontrado no sistema.")
@@ -459,7 +460,7 @@ elif menu == "gerar_ficha":
                         )
 
 # ==============================================================================
-# VISÕES DO DASHBOARD E ALERTAS (DADOS CONSOLIDADOS E ISENTOS DE REGEX)
+# VISÕES DO DASHBOARD E ALERTAS (GRÁFICOS DESMEMBRADOS E FILTROS)
 # ==============================================================================
 else:
     if df_base_completa.empty:
@@ -469,7 +470,7 @@ else:
         df_alertas_filtrado = df_alertas_filtrado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
 
         if not df_func.empty and len(df_func.columns) > 3:
-            mapa_cargos = {str(row.iloc[1]).strip().upper(): str(row.iloc[3]).strip() for _, row in df_func.iterrows()}
+            mapa_cargos = {str(row.iloc[1]).replace('?', '').strip().upper(): str(row.iloc[3]).replace('?', '').strip() for _, row in df_func.iterrows()}
             df_alertas_filtrado['Cargo'] = df_alertas_filtrado['Funcionário'].str.strip().str.upper().map(mapa_cargos).fillna("Não Informado")
         else:
             df_alertas_filtrado['Cargo'] = "Não Informado"
@@ -480,21 +481,20 @@ else:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Filtros do Painel")
         
-        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().astype(str).unique().tolist())
+        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist())
         deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
         
-        lista_cargos = sorted(df_alertas_filtrado['Cargo'].dropna().astype(str).unique().tolist())
+        lista_cargos = sorted(df_alertas_filtrado['Cargo'].dropna().unique().tolist())
         cargos_selecionados = st.sidebar.multiselect("Filtrar por Cargo:", options=lista_cargos, default=lista_cargos)
         
-        lista_status = sorted(df_alertas_filtrado['Status'].dropna().astype(str).unique().tolist())
+        lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist())
         status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
         
-        # Filtro exato via .isin() que elimina totalmente erros no PyArrow
         df_painel_filtrado = df_alertas_filtrado[
             (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
             (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
             (df_alertas_filtrado['Status'].isin(status_selecionados))
-        ].copy()
+        ]
 
         # ==============================================================================
         # VISÃO: DASHBOARD DE GESTÃO INTERATIVO
@@ -503,17 +503,11 @@ else:
             st.header("📊 Painel de Indicadores Estratégicos")
             st.markdown("Indicadores de distribuição física e conformidade legal de fácil entendimento.")
             
-            # Cálculo de métricas usando igualdade direta (sem .str.contains)
-            qtd_total = len(df_painel_filtrado)
-            qtd_regulares = len(df_painel_filtrado[df_painel_filtrado['Status'] == "Regular"])
-            qtd_criticos = len(df_painel_filtrado[df_painel_filtrado['Status'] == "CRITICO (Ate 15 dias)"])
-            qtd_vencidos = len(df_painel_filtrado[df_painel_filtrado['Status'] == "VENCIDO"])
-
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("EPIs Ativos Monitorados", qtd_total)
-            c2.metric("Itens Regulares", qtd_regulares)
-            c3.metric("Alertas Críticos", qtd_criticos)
-            c4.metric("Total Vencidos", qtd_vencidos)
+            c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
+            c2.metric("Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "Regular"]))
+            c3.metric("Alertas Criticos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "CRITICO (Ate 15 dias)"]))
+            c4.metric("Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "VENCIDO"]))
             
             st.markdown("---")
             
@@ -556,7 +550,7 @@ else:
                     st.info("Sem dados para exibir o gráfico de cargos.")
             
             st.markdown("---")
-            st.markdown("### Central de Exportação de Dados")
+            st.markdown("### 📥 Central de Exportação de Dados")
             st.markdown("Baixe os dados consolidados e filtrados acima para anexar em e-mails corporativos ou montar seus relatórios.")
             
             col_exp1, col_exp2 = st.columns(2)
