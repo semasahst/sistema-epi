@@ -95,8 +95,9 @@ def atualizar_csv_completo(df_novo):
         return req_put.status_code in [200, 201]
     return False
 
+
 # ==============================================================================
-# CONSTRUÇÃO DA BASE COMPLETA (HISTÓRICO AUDITÁVEL) - COM COLUNA EMAIL FIXA
+# CONSTRUÇÃO DA BASE COMPLETA (HISTÓRICO AUDITÁVEL)
 # ==============================================================================
 def construir_base_alertas():
     try:
@@ -162,19 +163,10 @@ def construir_base_alertas():
             f_match = df_func_aux[df_func_aux.iloc[:, 1] == nome_func_busca]
             
             if not f_match.empty:
-                idx_original_func = f_match.index[0]
-                re_vinculado = str(df_func.iloc[idx_original_func, 0]).split('.')[0].strip()
-                departamento = str(df_func.iloc[idx_original_func, 2]).replace('?', '').strip()
-                
-                # Puxa explicitamente a nova coluna de e-mail (Coluna 6 -> Índice 5)
+                re_vinculado = str(df_func.iloc[f_match.index[0], 0]).split('.')[0].strip()
+                departamento = str(df_func.iloc[f_match.index[0], 2]).replace('?', '').strip()
                 if len(df_func.columns) > 5:
-                    email_celula = str(df_func.iloc[idx_original_func, 5]).strip()
-                    if email_celula and "@" in email_celula and email_celula.lower() != "nan":
-                        email_func = email_celula
-                        
-        # Mantém a montagem automática baseada no RE caso a célula do funcionário esteja em branco
-        if not email_func:
-            email_func = f"{re_vinculado}@semasa.sp.gov.br"
+                    email_func = str(df_func.iloc[f_match.index[0], 5]).strip()
         
         linhas_processadas.append({
             "INDEX_ORIGINAL": idx,
@@ -189,11 +181,12 @@ def construir_base_alertas():
             "Dias Restantes": dias_restantes, 
             "Status": status_validade, 
             "Assinatura": status_assinatura,
-            "Email": email_func
+            "Email": email_func if email_func and "@" in email_func else f"{re_vinculado}@semasa.sp.gov.br"
         })
         
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
+df_base_completa = construir_base_alertas()
 # ==============================================================================
 # FUNÇÃO AUXILIAR: GERADOR DE PDF DA FICHA DE EPI
 # ==============================================================================
