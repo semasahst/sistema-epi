@@ -6,7 +6,7 @@ import base64
 import io
 import urllib.parse
 
-# Importações para a geração do PDF da Ficha de EPI
+# Importações para a geração do PDF da Ficha de EPI (NR-6)
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -22,12 +22,10 @@ GITHUB_USER = "semasahst"
 GITHUB_REPO = "sistema-epi"
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 
+# Substitua pelos links raw corretos se for o caso
 URL_RESPOSTAS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/respostas.csv"
 URL_FUNCIONARIOS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/funcionarios.csv"
 URL_EPIS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/epis.csv"
-
-# E-mails fixos do HST para envio de relatórios consolidados
-HST_GERAL = ["adonini@semasa.sp.gov.br", "ACampos1@semasa.sp.gov.br"]
 
 # ==============================================================================
 # CARREGAMENTO DOS DADOS COM TRATAMENTO DE ERROS
@@ -94,7 +92,6 @@ def atualizar_csv_completo(df_novo):
         req_put = requests.put(url_api, headers=headers, json=payload)
         return req_put.status_code in [200, 201]
     return False
-
 
 # ==============================================================================
 # CONSTRUÇÃO DA BASE COMPLETA (HISTÓRICO AUDITÁVEL)
@@ -163,10 +160,18 @@ def construir_base_alertas():
             f_match = df_func_aux[df_func_aux.iloc[:, 1] == nome_func_busca]
             
             if not f_match.empty:
-                re_vinculado = str(df_func.iloc[f_match.index[0], 0]).split('.')[0].strip()
-                departamento = str(df_func.iloc[f_match.index[0], 2]).replace('?', '').strip()
+                idx_original_func = f_match.index[0]
+                re_vinculado = str(df_func.iloc[idx_original_func, 0]).split('.')[0].strip()
+                departamento = str(df_func.iloc[idx_original_func, 2]).replace('?', '').strip()
+                
+                # Busca e-mail na coluna indexada 5 (6ª coluna)
                 if len(df_func.columns) > 5:
-                    email_func = str(df_func.iloc[f_match.index[0], 5]).strip()
+                    email_celula = str(df_func.iloc[idx_original_func, 5]).strip()
+                    if email_celula and "@" in email_celula and email_celula.lower() != "nan":
+                        email_func = email_celula
+                        
+        if not email_func:
+            email_func = f"{re_vinculado}@semasa.sp.gov.br"
         
         linhas_processadas.append({
             "INDEX_ORIGINAL": idx,
@@ -181,12 +186,13 @@ def construir_base_alertas():
             "Dias Restantes": dias_restantes, 
             "Status": status_validade, 
             "Assinatura": status_assinatura,
-            "Email": email_func if email_func and "@" in email_func else f"{re_vinculado}@semasa.sp.gov.br"
+            "Email": email_func
         })
         
     return pd.DataFrame(linhas_processadas) if linhas_processadas else pd.DataFrame()
 
 df_base_completa = construir_base_alertas()
+
 # ==============================================================================
 # FUNÇÃO AUXILIAR: GERADOR DE PDF DA FICHA DE EPI
 # ==============================================================================
@@ -196,21 +202,21 @@ def gerar_pdf_ficha(re_func, nome_func, depto_func, df_itens):
     story = []
     
     styles = getSampleStyleSheet()
-    style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], alignment=1, fontSize=16, spaceAfter=15)
-    style_texto = ParagraphStyle('Texto', parent=styles['Normal'], fontSize=10, leading=14)
-    style_termo = ParagraphStyle('Termo', parent=styles['Normal'], fontSize=8, leading=11, alignment=4)
-    style_auditoria = ParagraphStyle('Auditoria', parent=styles['Normal'], alignment=1, fontSize=9, textColor=colors.HexColor('#222222'), spaceBefore=20)
+    style_titulo = ParagraphStyle('Titulo', parent=styles['Heading1'], alignment=1, fontSize=14, spaceAfter=12)
+    style_texto = ParagraphStyle('Texto', parent=styles['Normal'], fontSize=9, leading=13)
+    style_termo = ParagraphStyle('Termo', parent=styles['Normal'], fontSize=7.5, leading=10, alignment=4)
+    style_auditoria = ParagraphStyle('Auditoria', parent=styles['Normal'], alignment=1, fontSize=8, textColor=colors.HexColor('#222222'), spaceBefore=15)
     
     story.append(Paragraph("<b>SEMASA - SERVIÇO MUNICIPAL DE SANEAMENTO AMBIENTAL</b>", style_titulo))
     story.append(Paragraph("<b>FICHA DE REGISTRO DE ENTREGA DE EPIs (NR-6)</b>", style_titulo))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
     
     dados_colaborador = f"""
     <b>Colaborador:</b> {nome_func} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>RE:</b> {re_func}<br/>
     <b>Departamento / Setor:</b> {depto_func} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Data de Emissão da Ficha:</b> {datetime.now().strftime('%d/%m/%Y')}
     """
     story.append(Paragraph(dados_colaborador, style_texto))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 10))
     
     termo_legal = """
 Declaramos para os devidos fins legais que recebi do SEMASA os Equipamentos de Proteção Individual (EPIs)
@@ -221,7 +227,7 @@ unívoco e individualizado do trabalhador atua como assinatura eletrônica avan�
 validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
     """
     story.append(Paragraph(f"<i>{termo_legal}</i>", style_termo))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 10))
     
     tabela_dados = [["EPI / Descrição", "C.A.", "Qtd", "Data Entrega", "Forma de Assinatura"]]
     for _, row in df_itens.iterrows():
@@ -229,23 +235,23 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
         tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "PENDENTE (Assinar à caneta)"
         tabela_dados.append([row['EPI'], row['CA'], str(row['Qtd']), dt_str, tipo_ass])
         
-    t = Table(tabela_dados, colWidths=[220, 60, 40, 80, 140])
+    t = Table(tabela_dados, colWidths=[200, 60, 40, 80, 160])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.grey),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('ALIGN', (0,1), (0,-1), 'LEFT'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('BACKGROUND', (0,1), (-1,-1), colors.beige),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,0), 4),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#F9F9F9')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
     ]))
     story.append(t)
-    story.append(Spacer(1, 35))
+    story.append(Spacer(1, 25))
     
     story.append(Paragraph("____________________________________________________", style_titulo))
-    story.append(Paragraph(f"Assinatura do Colaborador: {nome_func}", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, fontSize=10)))
+    story.append(Paragraph(f"Assinatura do Colaborador: {nome_func}", ParagraphStyle('Sub', parent=styles['Normal'], alignment=1, fontSize=9)))
     
     story.append(Paragraph("<b>VALIDADO EM AUDITORIA VIA ASSINATURA ELETRÔNICA DE CRACHÁ NFC</b>", style_auditoria))
     
@@ -256,19 +262,19 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
 # ==============================================================================
 # MENU LATERAL INTERATIVO
 # ==============================================================================
-st.sidebar.markdown("## Navigation")
+st.sidebar.markdown("## Navegação")
 
 dict_menu = {
-    "lancar_epi": "Lancar Novos EPIs",
+    "lancar_epi": "Lançar Novos EPIs",
     "coletar_ass": "Coletar Assinaturas Pendentes",
-    "gerar_ficha": "Gerar Ficha de EPI (Impressao)",
-    "dashboard": "Dashboard de Gestao",
+    "gerar_ficha": "Gerar Ficha de EPI (Impressão)",
+    "dashboard": "Dashboard de Gestão",
     "vencidos": "EPIs Vencidos/A Vencer",
     "disparador_alertas": "Disparador de Alertas (HST)"
 }
 
 opcao_selecionada = st.sidebar.selectbox(
-    "Escolha a Visao:", 
+    "Escolha a Visão:", 
     options=list(dict_menu.values())
 )
 
@@ -352,7 +358,7 @@ if menu == "lancar_epi":
                         st.error("Erro ao salvar no GitHub.")
 
 # ==============================================================================
-# VISÃO 2: COLETAR ASSINATURAS PENDENTES (COM LINKS DE COBRANÇA POR E-MAIL)
+# VISÃO 2: COLETAR ASSINATURAS PENDENTES (INDIVIDUAL)
 # ==============================================================================
 elif menu == "coletar_ass":
     st.header("✍️ Regularização de Assinaturas Pendentes")
@@ -374,7 +380,7 @@ elif menu == "coletar_ass":
                 df_exibir["Data Entrega"] = df_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_exibir, use_container_width=True)
                 
-                # Botão Dinâmico de Cobrança Direta por E-mail
+                # Cobrança rápida por e-mail
                 st.markdown("### ✉️ Notificação por E-mail")
                 func_nome = df_pendentes_func.iloc[0]["Funcionário"]
                 email_destino = df_pendentes_func.iloc[0]["Email"]
@@ -437,7 +443,7 @@ elif menu == "coletar_ass":
                                 st.error(f"Falha técnica: {ex}")
 
 # ==============================================================================
-# VISÃO 3: GERAR FICHA OFICIAL DE EPI PARA IMPRESSÃO
+# VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
 # ==============================================================================
 elif menu == "gerar_ficha":
     st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
@@ -485,54 +491,119 @@ elif menu == "gerar_ficha":
                         )
 
 # ==============================================================================
-# VISÃO 4: DISPARADOR DE ALERTAS COMPLETO (HST)
+# VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
 # ==============================================================================
 elif menu == "disparador_alertas":
     st.header("📢 Central de Disparos e Alertas Consolidados (HST)")
     st.markdown("Painel dedicado para o time do HST disparar notificações em massa de cobrança via e-mail corporativo.")
     
     if df_base_completa.empty:
-        st.info("Nenhum histórico coletado.")
+        st.info("Nenhum histórico coletado para gerar alertas.")
     else:
-        df_pendentes_geral = df_base_completa[df_base_completa['Assinatura'] == "Pendente"]
+        # Criando duas abas para separar os tipos de cobrança
+        aba_assinaturas, aba_validades = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos"])
         
-        if df_pendentes_geral.empty:
-            st.success("Excelente! O Semasa não possui nenhuma assinatura pendente hoje.")
-        else:
-            st.warning(f"Existem atualmente {len(df_pendentes_geral)} assinaturas pendentes em todo o sistema.")
+        # ----------------------------------------------------------------------
+        # ABA 1: ASSINATURAS PENDENTES
+        # ----------------------------------------------------------------------
+        with aba_assinaturas:
+            df_pendentes_geral = df_base_completa[df_base_completa['Assinatura'] == "Pendente"]
             
-            # Agrupar por funcionário para enviar e-mails em lote
-            func_agrupados = df_pendentes_geral.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="Itens Pendentes")
-            st.dataframe(func_agrupados, use_container_width=True)
+            if df_pendentes_geral.empty:
+                st.success("Excelente! O Semasa não possui nenhuma assinatura pendente hoje.")
+            else:
+                st.warning(f"Existem atualmente {len(df_pendentes_geral)} assinaturas pendentes no sistema.")
+                
+                func_agrupados = df_pendentes_geral.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="Itens Pendentes")
+                st.dataframe(func_agrupados, use_container_width=True)
+                
+                st.markdown("### ⚡ Cobrança de Assinatura")
+                for _, row in func_agrupados.iterrows():
+                    re_f = row["RE"]
+                    nome_f = row["Funcionário"]
+                    email_f = row["Email"]
+                    qtd_f = row["Itens Pendentes"]
+                    
+                    df_itens_f = df_pendentes_geral[df_pendentes_geral["RE"] == re_f]
+                    lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
+                    
+                    assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
+                    corpo_lote = urllib.parse.quote(
+                        f"Prezado(a) {nome_f},%0A%0A"
+                        f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA:%0A%0A"
+                        f"{lista_itens}%0A%0A"
+                        f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Por favor, compareça ao HST munido de seu crachá NFC.%0A%0A"
+                        f"Atenciosamente,%0AEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    
+                    link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
+                    
+                    col_c1, col_c2 = st.columns([3, 1])
+                    col_c1.write(f"👤 **{nome_f}** (RE: {re_f}) — {qtd_f} assinatura(s) pendente(s)")
+                    col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Assinatura</a>', unsafe_allow_html=True)
+
+        # ----------------------------------------------------------------------
+        # ABA 2: EPIS VENCIDOS E CRÍTICOS (ALERTA DE VALIDADE E RENOVAÇÃO)
+        # ----------------------------------------------------------------------
+        with aba_validades:
+            # Filtra o histórico mais recente de cada EPI por funcionário para evitar duplicidade
+            df_validades_alertas = df_base_completa.sort_values(by="Data Entrega", ascending=True)
+            df_validades_alertas = df_validades_alertas.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
             
-            st.markdown("### ⚡ Ações Rápidas de Cobrança")
-            for _, row in func_agrupados.iterrows():
-                re_f = row["RE"]
-                nome_f = row["Funcionário"]
-                email_f = row["Email"]
-                qtd_f = row["Itens Pendentes"]
+            # Filtra apenas o que for VENCIDO ou CRITICO
+            df_irregulares = df_validades_alertas[df_validades_alertas['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
+            
+            if df_irregulares.empty:
+                st.success("Sensacional! Todos os colaboradores estão com os prazos e trocas de EPIs em dia!")
+            else:
+                st.error(f"Atenção: Foram localizados {len(df_irregulares)} registros de EPIs vencidos ou com validade crítica.")
                 
-                df_itens_f = df_pendentes_geral[df_pendentes_geral["RE"] == re_f]
-                lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
+                # Exibe tabela resumo dos funcionários com prazos estourados
+                func_vencidos_agrupados = df_irregulares.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="EPIs Irregulares")
+                st.dataframe(df_irregulares[["RE", "Funcionário", "EPI", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
                 
-                assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO EXTRAORDINÁRIA: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
-                corpo_lote = urllib.parse.quote(
-                    f"Prezado(a) Gestor (a) identificamos que {nome_f}, "
-                    f"possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA:"
-                    f"{lista_itens} "
-                    f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Compareça ao HST hoje. "
-                    f"Atenciosamente,"  
-                    f" A HST - Higiene e Segurança do Trabalho - SEMASA"
-                )
+                st.markdown("### ⚡ Notificação de Troca / Renovação Obrigatória")
+                st.markdown("Clique nos botões abaixo para notificar o colaborador a comparecer para retirar novos equipamentos:")
                 
-                link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
-                
-                col_c1, col_c2 = st.columns([3, 1])
-                col_c1.write(f"👤 **{nome_f}** (RE: {re_f}) — {qtd_f} item(ns) pendente(s)")
-                col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Enviar Cobrança</a>', unsafe_allow_html=True)
+                for _, row in func_vencidos_agrupados.iterrows():
+                    re_v = row["RE"]
+                    nome_v = row["Funcionário"]
+                    email_v = row["Email"]
+                    qtd_v = row["EPIs Irregulares"]
+                    
+                    # Coleta todos os EPIs problemáticos desse trabalhador específico
+                    df_itens_v = df_irregulares[df_irregulares["RE"] == re_v]
+                    
+                    lista_vencidos_texto = []
+                    for _, item in df_itens_v.iterrows():
+                        prazo_txt = f"VENCIDO há {abs(item['Dias Restantes'])} dias" if item['Dias Restantes'] < 0 else f"A VENCER (Restam {item['Dias Restantes']} dias)"
+                        lista_vencidos_texto.append(f"- {item['EPI']} | Status: {prazo_txt} (Vencimento em: {item['Data Vencimento'].strftime('%d/%m/%Y')})")
+                    
+                    lista_vencidos_pronta = "%0A".join(lista_vencidos_texto)
+                    
+                    assunto_vencido = urllib.parse.quote(f"AVISO: Renovação e Troca de EPI Obrigatória - RE {re_v}")
+                    corpo_vencido = urllib.parse.quote(
+                        f"Prezado(a) {nome_v},%0A%0A"
+                        f"Identificamos em nosso cronograma de controle do SEMASA que seu(s) equipamento(s) "
+                        f"de proteção individual listado(s) abaixo atingiu(aram) o prazo limite de validade de uso:%0A%0A"
+                        f"{lista_vencidos_pronta}%0A%0A"
+                        f"Para sua total proteção e em cumprimento às Normas Regulamentadoras, solicitamos que compareça "
+                        f"ao setor de Segurança do Trabalho (HST) o quanto antes para realizar o descarte correto do item antigo "
+                        f"e a retirada do seu novo kit de EPIs.%0A%0A"
+                        f"Não se esqueça de levar seu crachá funcional para a assinatura eletrônica da entrega.%0A%0A"
+                        f"Atenciosamente,%0AEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    
+                    link_mailto_vencido = f"mailto:{email_v}?subject={assunto_vencido}&body={corpo_vencido}"
+                    
+                    col_v1, col_v2 = st.columns([3, 1])
+                    cor_status = "#D32F2F" if any(df_itens_v['Dias Restantes'] < 0) else "#EF6C00"
+                    
+                    col_v1.markdown(f"👤 **{nome_v}** (RE: {re_v}) — possui <span style='color:{cor_status}; font-weight:bold;'>{qtd_v} equipamento(s)</span> precisando de troca.", unsafe_allow_html=True)
+                    col_v2.markdown(f'<a href="{link_mailto_vencido}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:{cor_status}; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Troca</a>', unsafe_allow_html=True)
 
 # ==============================================================================
-# VISÕES DO DASHBOARD E ALERTAS (DEMAIS TELAS)
+# VISÕES DE DASHBOARD E ALERTAS (DEMAIS TELAS)
 # ==============================================================================
 else:
     if df_base_completa.empty:
@@ -561,8 +632,8 @@ else:
         
         df_painel_filtrado = df_alertas_filtrado[
             (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
-            (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
-            (df_alertas_filtrado['Status'].isin(status_selecionados))
+            (df_painel_filtrado['Cargo'].isin(cargos_selecionados)) & 
+            (df_painel_filtrado['Status'].isin(status_selecionados))
         ]
 
         if menu == "dashboard":
