@@ -500,8 +500,8 @@ elif menu == "disparador_alertas":
     if df_base_completa.empty:
         st.info("Nenhum histórico coletado para gerar alertas.")
     else:
-        # Criando duas abas para separar os tipos de cobrança
-        aba_assinaturas, aba_validades = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos"])
+        # Criando agora TRÊS abas para separar os tipos de cobrança
+        aba_assinaturas, aba_validades, aba_gestores = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos", "🏢 Cobrança por Gestor (Departamento)"])
         
         # ----------------------------------------------------------------------
         # ABA 1: ASSINATURAS PENDENTES
@@ -546,11 +546,9 @@ elif menu == "disparador_alertas":
         # ABA 2: EPIS VENCIDOS E CRÍTICOS (ALERTA DE VALIDADE E RENOVAÇÃO)
         # ----------------------------------------------------------------------
         with aba_validades:
-            # Filtra o histórico mais recente de cada EPI por funcionário para evitar duplicidade
             df_validades_alertas = df_base_completa.sort_values(by="Data Entrega", ascending=True)
             df_validades_alertas = df_validades_alertas.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
             
-            # Filtra apenas o que for VENCIDO ou CRITICO
             df_irregulares = df_validades_alertas[df_validades_alertas['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
             
             if df_irregulares.empty:
@@ -558,12 +556,10 @@ elif menu == "disparador_alertas":
             else:
                 st.error(f"Atenção: Foram localizados {len(df_irregulares)} registros de EPIs vencidos ou com validade crítica.")
                 
-                # Exibe tabela resumo dos funcionários com prazos estourados
                 func_vencidos_agrupados = df_irregulares.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="EPIs Irregulares")
                 st.dataframe(df_irregulares[["RE", "Funcionário", "EPI", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
                 
                 st.markdown("### ⚡ Notificação de Troca / Renovação Obrigatória")
-                st.markdown("Clique nos botões abaixo para notificar o colaborador a comparecer para retirar novos equipamentos:")
                 
                 for _, row in func_vencidos_agrupados.iterrows():
                     re_v = row["RE"]
@@ -571,7 +567,6 @@ elif menu == "disparador_alertas":
                     email_v = row["Email"]
                     qtd_v = row["EPIs Irregulares"]
                     
-                    # Coleta todos os EPIs problemáticos desse trabalhador específico
                     df_itens_v = df_irregulares[df_irregulares["RE"] == re_v]
                     
                     lista_vencidos_texto = []
@@ -588,9 +583,7 @@ elif menu == "disparador_alertas":
                         f"de proteção individual listado(s) abaixo atingiu(aram) o prazo limite de validade de uso:%0A%0A"
                         f"{lista_vencidos_pronta}%0A%0A"
                         f"Para sua total proteção e em cumprimento às Normas Regulamentadoras, solicitamos que compareça "
-                        f"ao setor de Segurança do Trabalho (HST) o quanto antes para realizar o descarte correto do item antigo "
-                        f"e a retirada do seu novo kit de EPIs.%0A%0A"
-                        f"Não se esqueça de levar seu crachá funcional para a assinatura eletrônica da entrega.%0A%0A"
+                        f"ao setor de Segurança do Trabalho (HST) o quanto antes.%0A%0A"
                         f"Atenciosamente,%0AEquipe de Segurança do Trabalho - SEMASA"
                     )
                     
@@ -602,6 +595,70 @@ elif menu == "disparador_alertas":
                     col_v1.markdown(f"👤 **{nome_v}** (RE: {re_v}) — possui <span style='color:{cor_status}; font-weight:bold;'>{qtd_v} equipamento(s)</span> precisando de troca.", unsafe_allow_html=True)
                     col_v2.markdown(f'<a href="{link_mailto_vencido}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:{cor_status}; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Troca</a>', unsafe_allow_html=True)
 
+        # ----------------------------------------------------------------------
+        # ABA 3: COBRANÇA CONSOLIDADA POR GESTOR (DEPARTAMENTO)
+        # ----------------------------------------------------------------------
+        with aba_gestores:
+            st.markdown("### 🏢 Envio de Relatório de Pendências para as Chefias")
+            st.markdown("Cobre os gestores enviando uma lista unificada com todos os colaboradores do departamento que possuem pendências.")
+            
+            df_ass_pend = df_base_completa[df_base_completa['Assinatura'] == "Pendente"]
+            df_val_ativas = df_base_completa.sort_values(by="Data Entrega", ascending=True).drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
+            df_epi_irreg = df_val_ativas[df_val_ativas['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
+            
+            deptos_com_problema = set(df_ass_pend['Departamento'].dropna().unique()).union(set(df_epi_irreg['Departamento'].dropna().unique()))
+            deptos_com_problema = sorted([d for d in deptos_com_problema if d and str(d).lower() != 'nan' and str(d).strip() != 'Não Informado'])
+            
+            if not deptos_com_problema:
+                st.success("🎉 Excelente! Nenhum departamento possui pendências no momento.")
+            else:
+                st.info("Clique no departamento para expandir e gerar o e-mail para o gestor correspondente.")
+                
+                for depto in deptos_com_problema:
+                    with st.expander(f"📁 Relatório do Departamento: {depto}"):
+                        texto_email = f"Prezado(a) Gestor(a) do departamento {depto},\n\n"
+                        texto_email += "Abaixo listamos as pendências de Segurança do Trabalho (HST) referentes aos colaboradores sob sua gestão. Solicitamos seu apoio na orientação para que os mesmos regularizem sua situação o mais breve possível.\n\n"
+                        
+                        tem_pendencia = False
+                        
+                        # 1. Agrupando Assinaturas do Departamento
+                        df_ass_dep = df_ass_pend[df_ass_pend['Departamento'] == depto]
+                        if not df_ass_dep.empty:
+                            tem_pendencia = True
+                            texto_email += "🔴 ASSINATURAS PENDENTES (Falta validação com Crachá):\n"
+                            func_ass_grp = df_ass_dep.groupby("Funcionário")
+                            for func, itens in func_ass_grp:
+                                lista_epis = ", ".join(itens['EPI'].tolist())
+                                texto_email += f"   - {func}: {lista_epis}\n"
+                            texto_email += "\n"
+                            
+                        # 2. Agrupando EPIs Vencidos do Departamento
+                        df_epi_dep = df_epi_irreg[df_epi_irreg['Departamento'] == depto]
+                        if not df_epi_dep.empty:
+                            tem_pendencia = True
+                            texto_email += "🟠 EPIs VENCIDOS OU COM TROCA OBRIGATÓRIA PRÓXIMA:\n"
+                            func_epi_grp = df_epi_dep.groupby("Funcionário")
+                            for func, itens in func_epi_grp:
+                                lista_epis_v = []
+                                for _, row in itens.iterrows():
+                                    status_txt = "VENCIDO" if row['Dias Restantes'] < 0 else "A VENCER"
+                                    lista_epis_v.append(f"{row['EPI']} ({status_txt})")
+                                texto_email += f"   - {func}: {', '.join(lista_epis_v)}\n"
+                            texto_email += "\n"
+                            
+                        texto_email += "Por favor, oriente-os a comparecer ao HST munidos do crachá funcional.\n\nAtenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
+                        
+                        if tem_pendencia:
+                            c_info, c_btn = st.columns([3, 1])
+                            total_irreg = len(df_ass_dep) + len(df_epi_dep)
+                            c_info.write(f"Há um total de **{total_irreg} irregularidades** somando todos os funcionários da(o) **{depto}**.")
+                            
+                            # Prepara o link mailto (sem destinatário, para o usuário preencher o gestor)
+                            assunto_depto = urllib.parse.quote(f"Relatório de Pendências de EPIs (HST) - {depto}")
+                            corpo_depto = urllib.parse.quote(texto_email)
+                            link_mailto_depto = f"mailto:?subject={assunto_depto}&body={corpo_depto}"
+                            
+                            c_btn.markdown(f'<a href="{link_mailto_depto}" target="_blank" style="display:inline-block; padding:8px 12px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:13px; font-weight:bold; text-align:center;">✉️ Notificar Gestor(a)</a>', unsafe_allow_html=True)
 # ==============================================================================
 # VISÕES DE DASHBOARD E ALERTAS (DEMAIS TELAS)
 # ==============================================================================
