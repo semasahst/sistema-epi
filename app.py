@@ -632,8 +632,9 @@ else:
         
         df_painel_filtrado = df_alertas_filtrado[
             (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
-            (df_painel_filtrado['Cargo'].isin(cargos_selecionados)) & 
-            (df_painel_filtrado['Status'].isin(status_selecionados))
+            (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
+            (df_alertas_filtrado['Status'].isin(status_selecionados))
+
         ]
 
         if menu == "dashboard":
