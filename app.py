@@ -388,11 +388,11 @@ elif menu == "coletar_ass":
                 lista_itens_texto = "%0A".join([f"- {row['EPI']} (Pendente)" for _, row in df_pendentes_func.iterrows()])
                 assunto = urllib.parse.quote(f"COBRANÇA: Assinatura de Ficha de EPI Pendente - RE {re_busca}")
                 corpo_email = urllib.parse.quote(
-                    f"Prezado(a) {func_nome},%0A%0A"
-                    f"Consta em nosso sistema que você possui pendências de assinatura no recebimento dos seguintes EPIs:%0A%0A"
-                    f"{lista_itens_texto}%0A%0A"
-                    f"Por favor, compareça ao HST munido de seu crachá NFC para regularização.%0A%0A"
-                    f"Atenciosamente,%0AEquipe HST - SEMASA"
+                    f"Prezado(a) Gestor(a) Consta em nosso sistema que {func_nome}, "
+                    f"Possui pendências de assinatura no recebimento dos seguintes EPIs: "
+                    f"{lista_itens_texto} "
+                    f"Por favor, solicite que o(a) mesmo(a) compareça ao HST munido de seu crachá NFC para regularização. "
+                    f"Atenciosamente, Equipe HST - Higiene e Segurança do Trabalho - SEMASA"
                 )
                 link_mailto = f"mailto:{email_destino}?subject={assunto}&body={corpo_email}"
                 st.markdown(f'<a href="{link_mailto}" target="_blank" style="padding:10px 18px; border-radius:5px; background-color:#D32F2F; color:white; text-decoration:none; font-weight:bold;">📧 Enviar E-mail de Cobrança para {func_nome}</a>', unsafe_allow_html=True)
