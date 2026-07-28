@@ -529,11 +529,11 @@ elif menu == "disparador_alertas":
                     
                     assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
                     corpo_lote = urllib.parse.quote(
-                        f"Prezado(a) {nome_f},%0A%0A"
-                        f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA:%0A%0A"
-                        f"{lista_itens}%0A%0A"
-                        f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Por favor, compareça ao HST munido de seu crachá NFC.%0A%0A"
-                        f"Atenciosamente,%0AEquipe de Segurança do Trabalho - SEMASA"
+                        f"Prezado(a) {nome_f}, "
+                        f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA: "
+                        f"{lista_itens} "
+                        f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Por favor, compareça ao HST munido de seu crachá NFC. "
+                        f"Atenciosamente, Equipe de Segurança do Trabalho - SEMASA"
                     )
                     
                     link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
@@ -578,13 +578,13 @@ elif menu == "disparador_alertas":
                     
                     assunto_vencido = urllib.parse.quote(f"AVISO: Renovação e Troca de EPI Obrigatória - RE {re_v}")
                     corpo_vencido = urllib.parse.quote(
-                        f"Prezado(a) {nome_v},%0A%0A"
+                        f"Prezado(a) {nome_v}, "
                         f"Identificamos em nosso cronograma de controle do SEMASA que seu(s) equipamento(s) "
-                        f"de proteção individual listado(s) abaixo atingiu(aram) o prazo limite de validade de uso:%0A%0A"
-                        f"{lista_vencidos_pronta}%0A%0A"
+                        f"de proteção individual listado(s) abaixo atingiu(aram) o prazo limite de validade de uso: "
+                        f"{lista_vencidos_pronta} "
                         f"Para sua total proteção e em cumprimento às Normas Regulamentadoras, solicitamos que compareça "
-                        f"ao setor de Segurança do Trabalho (HST) o quanto antes.%0A%0A"
-                        f"Atenciosamente,%0AEquipe de Segurança do Trabalho - SEMASA"
+                        f"ao setor de Segurança do Trabalho (HST) o quanto antes. "
+                        f"Atenciosamente, Equipe de Segurança do Trabalho - SEMASA"
                     )
                     
                     link_mailto_vencido = f"mailto:{email_v}?subject={assunto_vencido}&body={corpo_vencido}"
