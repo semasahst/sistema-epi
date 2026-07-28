@@ -400,6 +400,7 @@ elif menu == "coletar_ass":
                 st.markdown("---")
                 st.markdown("### 🔒 Validação de Baixa Segura (Presencial)")
                 
+                # Input de crachá
                 nfc_baixa = st.text_input("APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", type="password", key="input_cracha_baixa").strip()
                 
                 if nfc_baixa:
@@ -436,12 +437,14 @@ elif menu == "coletar_ass":
                                     if atualizar_csv_completo(df_raw_csv):
                                         st.success(f"Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
                                         st.balloons()
+                                        
+                                        # CORREÇÃO DO LOOPING: Limpa o campo do crachá na memória antes de recarregar
+                                        st.session_state["input_cracha_baixa"] = ""
                                         st.rerun()
                                     else:
                                         st.error("Erro ao salvar no GitHub.")
                             except Exception as ex:
                                 st.error(f"Falha técnica: {ex}")
-
 # ==============================================================================
 # VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
 # ==============================================================================
