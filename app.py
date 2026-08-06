@@ -607,7 +607,7 @@ elif menu == "disparador_alertas":
 # ==============================================================================
 elif menu == "auditoria":
     st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
-    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
+    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolavel), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
     
     with st.spinner("Extraindo logs criptografados do banco de dados..."):
         try:
@@ -621,7 +621,7 @@ elif menu == "auditoria":
                 # Renomeia as colunas para o auditor entender exatamente o que é cada dado
                 df_audit = df_audit.rename(columns={
                     "id": "ID Transação",
-                    "created_at": "Carimbo de Tempo do Servidor (Prova Inviolável)",
+                    "created_at": "Carimbo de Tempo do Servidor (Prova Inviolavel)",
                     "re": "RE Colaborador",
                     "nome_funcionario": "Nome do Colaborador",
                     "epi": "EPI Entregue",
