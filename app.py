@@ -223,7 +223,8 @@ dict_menu = {
     "gerar_ficha": "Gerar Ficha de EPI (Impressão)",
     "dashboard": "Dashboard de Gestão",
     "vencidos": "EPIs Vencidos/A Vencer",
-    "disparador_alertas": "Disparador de Alertas (HST)"
+    "disparador_alertas": "Disparador de Alertas (HST)",
+    "auditoria": "Exportação para Auditoria" # <- NOVA OPÇÃO AQUI
 }
 
 opcao_selecionada = st.sidebar.selectbox(
@@ -601,6 +602,56 @@ elif menu == "disparador_alertas":
 # ==============================================================================
 # VISÕES DE DASHBOARD E ALERTAS (DEMAIS TELAS)
 # ==============================================================================
+# ==============================================================================
+# VISÃO 5: EXPORTAÇÃO PARA AUDITORIA E MTE
+# ==============================================================================
+elif menu == "auditoria":
+    st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
+    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
+    
+    with st.spinner("Extraindo logs criptografados do banco de dados..."):
+        try:
+            # Puxa a base bruta direto do Supabase, incluindo o created_at (Prova de Ouro)
+            resposta_audit = supabase.table("entregas_epi").select("*").execute()
+            df_audit = pd.DataFrame(resposta_audit.data)
+            
+            if df_audit.empty:
+                st.info("Nenhum registro localizado no banco de dados.")
+            else:
+                # Renomeia as colunas para o auditor entender exatamente o que é cada dado
+                df_audit = df_audit.rename(columns={
+                    "id": "ID Transação",
+                    "created_at": "Carimbo de Tempo do Servidor (Prova Inviolável)",
+                    "re": "RE Colaborador",
+                    "nome_funcionario": "Nome do Colaborador",
+                    "epi": "EPI Entregue",
+                    "data_entrega": "Data de Referência da Baixa/Assinatura"
+                })
+                
+                # Reorganiza a ordem das colunas para destacar o carimbo de tempo
+                ordem_colunas = ["ID Transação", "Carimbo de Tempo do Servidor (Prova Inviolável)", "RE Colaborador", "Nome do Colaborador", "EPI Entregue", "Data de Referência da Baixa/Assinatura"]
+                df_audit = df_audit[ordem_colunas]
+                
+                st.success(f"Extração concluída: {len(df_audit)} registros consolidados protegidos contra alteração.")
+                
+                # Mostra uma prévia na tela
+                st.dataframe(df_audit, use_container_width=True)
+                
+                # Configura a exportação para CSV compatível nativamente com o Excel (utf-8-sig)
+                csv_audit = df_audit.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                
+                st.markdown("---")
+                st.markdown("### 📥 Download do Arquivo Legal")
+                
+                st.download_button(
+                    label="Baixar Log Completo de Auditoria (Abrir no Excel)",
+                    data=csv_audit,
+                    file_name=f"Auditoria_HST_SEMASA_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
+                
+        except Exception as e:
+            st.error(f"Falha técnica ao acessar os logs do servidor: {e}")
 else:
     if df_base_completa.empty:
         st.warning("Aguardando a sincronização dos dados...")
