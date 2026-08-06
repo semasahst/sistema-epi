@@ -1,6 +1,6 @@
 streamlit
-supabase
 pandas
 requests
 reportlab
 plotly
+supabase
