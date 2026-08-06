@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import requests
-import base64
-import io
 import urllib.parse
+import io
+import base64
+from supabase import create_client, Client
 
 # Importações para a geração do PDF da Ficha de EPI (NR-6)
 from reportlab.lib.pagesizes import letter
@@ -16,21 +16,25 @@ from reportlab.lib import colors
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
 # ==============================================================================
-# CONFIGURAÇÕES DE ACESSO AO REPOSITÓRIO (GITHUB)
+# CONEXÃO COM O SUPABASE (Substitui a gravação no GitHub)
+# ==============================================================================
+try:
+    url: str = st.secrets["SUPABASE_URL"]
+    key: str = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+except Exception as e:
+    st.error(f"Erro ao carregar as credenciais do Supabase: {e}")
+    st.stop()
+
+# ==============================================================================
+# LEITURA DAS TABELAS MESTRE (Mantidas no GitHub por serem leitura simples)
 # ==============================================================================
 GITHUB_USER = "semasahst"  
 GITHUB_REPO = "sistema-epi"
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-
-# Substitua pelos links raw corretos se for o caso
-URL_RESPOSTAS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/respostas.csv"
 URL_FUNCIONARIOS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/funcionarios.csv"
 URL_EPIS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/epis.csv"
 
-# ==============================================================================
-# CARREGAMENTO DOS DADOS COM TRATAMENTO DE ERROS
-# ==============================================================================
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=60)
 def buscar_dados_planilhas():
     try:
         df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
@@ -42,64 +46,14 @@ def buscar_dados_planilhas():
 df_func, df_epis = buscar_dados_planilhas()
 
 # ==============================================================================
-# FUNÇÕES DE PERSISTÊNCIA NO GITHUB
-# ==============================================================================
-def salvar_lote_no_github(novas_linhas_lista):
-    if not GITHUB_TOKEN:
-        st.error("Erro: GITHUB_TOKEN não configurado nas Secrets.")
-        return False
-        
-    url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    
-    req_get = requests.get(url_api, headers=headers)
-    if req_get.status_code == 200:
-        dados_repo = req_get.json()
-        sha_arquivo = dados_repo['sha']
-        conteudo_antigo = base64.b64decode(dados_repo['content']).decode('utf-8')
-        df_atual = pd.read_csv(io.StringIO(conteudo_antigo), header=None, dtype=str)
-    else:
-        try:
-            df_atual = pd.read_csv(URL_RESPOSTAS, header=None, dtype=str)
-            sha_arquivo = ""
-        except:
-            return False
-
-    df_novas = pd.DataFrame(novas_linhas_lista)
-    df_final = pd.concat([df_atual, df_novas], ignore_index=True)
-    
-    csv_string = df_final.to_csv(index=False, header=False)
-    conteudo_base64 = base64.b64encode(csv_string.encode('utf-8')).decode('utf-8')
-    
-    payload = {
-        "message": f"Atualização em lote: {len(novas_linhas_lista)} registros",
-        "content": conteudo_base64,
-        "sha": sha_arquivo
-    }
-    
-    req_put = requests.put(url_api, headers=headers, json=payload)
-    return req_put.status_code in [200, 201]
-
-def atualizar_csv_completo(df_novo):
-    url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    req_get = requests.get(url_api, headers=headers)
-    if req_get.status_code == 200:
-        sha_arquivo = req_get.json()['sha']
-        csv_string = df_novo.to_csv(index=False, header=False)
-        conteudo_base64 = base64.b64encode(csv_string.encode('utf-8')).decode('utf-8')
-        payload = {"message": "Baixa em assinaturas pendentes", "content": conteudo_base64, "sha": sha_arquivo}
-        req_put = requests.put(url_api, headers=headers, json=payload)
-        return req_put.status_code in [200, 201]
-    return False
-
-# ==============================================================================
-# CONSTRUÇÃO DA BASE COMPLETA (HISTÓRICO AUDITÁVEL)
+# CONSTRUÇÃO DA BASE COMPLETA VIA SUPABASE
 # ==============================================================================
 def construir_base_alertas():
     try:
-        df_hist = pd.read_csv(URL_RESPOSTAS, header=None, dtype=str).dropna(how='all')
-    except:
+        response = supabase.table("entregas_epi").select("*").execute()
+        df_hist = pd.DataFrame(response.data)
+    except Exception as e:
+        st.error(f"Erro ao ler banco de dados: {e}")
         return pd.DataFrame()
         
     if df_hist.empty:
@@ -114,26 +68,24 @@ def construir_base_alertas():
         mapa_validades = {str(row.iloc[0]).replace('?', '').strip(): int(row.iloc[2]) if pd.notnull(row.iloc[2]) else 90 for _, row in df_epis.iterrows()}
         mapa_ca = {str(row.iloc[0]).replace('?', '').strip(): str(row.iloc[1]).strip() for _, row in df_epis.iterrows()}
     
-    for idx, row in df_hist.iterrows():
-        linha_completa_texto = " ".join([str(val).upper() for val in row.values if pd.notnull(val)])
+    for _, row in df_hist.iterrows():
+        id_registro = row.get("id")
+        nome_epi = str(row.get("epi", "")).strip()
+        nome_func = str(row.get("nome_funcionario", "")).strip()
+        raw_data_entrega = str(row.get("data_entrega", "")).strip()
         
-        if "PENDENTE" in linha_completa_texto or "PEND" in linha_completa_texto:
+        if "PENDENTE" in raw_data_entrega.upper() or "PEND" in raw_data_entrega.upper():
             status_assinatura = "Pendente"
             raw_data_entrega_limpa = datetime.now().strftime("%d/%m/%Y")
         else:
             status_assinatura = "Assinado"
-            raw_data_entrega_limpa = str(row.iloc[-1]).strip() if len(row) > 0 else datetime.now().strftime("%d/%m/%Y")
+            # O Supabase salva no formato YYYY-MM-DD
+            try:
+                dt_obj = datetime.strptime(raw_data_entrega, "%Y-%m-%d")
+                raw_data_entrega_limpa = dt_obj.strftime("%d/%m/%Y")
+            except:
+                raw_data_entrega_limpa = raw_data_entrega if raw_data_entrega else datetime.now().strftime("%d/%m/%Y")
             
-        total_cols = len(row)
-        if total_cols >= 6:
-            nome_epi = str(row.iloc[1]).replace('?', '').strip()
-            nome_func = str(row.iloc[4]).replace('?', '').strip()
-        elif total_cols >= 3:
-            nome_epi = str(row.iloc[0]).replace('?', '').strip()
-            nome_func = str(row.iloc[1]).replace('?', '').strip()
-        else:
-            continue
-
         if not nome_func or nome_func.lower() == 'nan' or nome_func == '':
             continue
             
@@ -149,7 +101,7 @@ def construir_base_alertas():
         dias_restantes = (dt_vencimento - hoje).days
         status_validade = "VENCIDO" if dias_restantes < 0 else ("CRITICO (Ate 15 dias)" if dias_restantes <= 15 else "Regular")
         
-        re_vinculado = "N/A"
+        re_vinculado = str(row.get("re", "N/A"))
         departamento = "Não Informado"
         email_func = ""
         
@@ -161,10 +113,11 @@ def construir_base_alertas():
             
             if not f_match.empty:
                 idx_original_func = f_match.index[0]
-                re_vinculado = str(df_func.iloc[idx_original_func, 0]).split('.')[0].strip()
+                # Se não tem RE na tabela Supabase, busca no df_func
+                if re_vinculado == "N/A" or not re_vinculado:
+                    re_vinculado = str(df_func.iloc[idx_original_func, 0]).split('.')[0].strip()
                 departamento = str(df_func.iloc[idx_original_func, 2]).replace('?', '').strip()
                 
-                # Busca e-mail na coluna indexada 5 (6ª coluna)
                 if len(df_func.columns) > 5:
                     email_celula = str(df_func.iloc[idx_original_func, 5]).strip()
                     if email_celula and "@" in email_celula and email_celula.lower() != "nan":
@@ -174,7 +127,7 @@ def construir_base_alertas():
             email_func = f"{re_vinculado}@semasa.sp.gov.br"
         
         linhas_processadas.append({
-            "INDEX_ORIGINAL": idx,
+            "INDEX_ORIGINAL": id_registro,
             "RE": re_vinculado,
             "Funcionário": nome_func, 
             "Departamento": departamento,
@@ -342,20 +295,19 @@ if menu == "lancar_epi":
                 lote_linhas = []
                 for epi in epis_selecionados:
                     lote_linhas.append({
-                        0: "",                                                                                   
-                        1: str(epi),                                                                             
-                        2: "",                                                                                   
-                        3: "",                                                                                   
-                        4: str(nome_funcionario),                                                                    
-                        5: "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d")
+                        "re": str(re_digitado),
+                        "nome_funcionario": str(nome_funcionario),
+                        "epi": str(epi),
+                        "data_entrega": "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d")
                     })
                 
-                with st.spinner("Salvando lote no GitHub..."):
-                    if salvar_lote_no_github(lote_linhas):
+                with st.spinner("Salvando lote no Supabase..."):
+                    try:
+                        supabase.table("entregas_epi").insert(lote_linhas).execute()
                         st.success(f"Gravado com sucesso para {nome_funcionario}!")
                         st.balloons()
-                    else:
-                        st.error("Erro ao salvar no GitHub.")
+                    except Exception as e:
+                        st.error(f"Erro ao salvar no Supabase: {e}")
 
 # ==============================================================================
 # VISÃO 2: COLETAR ASSINATURAS PENDENTES (INDIVIDUAL)
@@ -414,37 +366,22 @@ elif menu == "coletar_ass":
                         dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
                         st.error(f"Bloqueado: Este crachá pertence a '{dono_desse_cracha}'!")
                     else:
-                        with st.spinner("Processando assinaturas legítimas..."):
+                        with st.spinner("Processando assinaturas legítimas no Supabase..."):
                             try:
-                                url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/respostas.csv"
-                                headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-                                req_get = requests.get(url_api, headers=headers)
+                                indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
+                                data_hoje_str = datetime.now().strftime("%Y-%m-%d")
                                 
-                                if req_get.status_code == 200:
-                                    conteudo_bruto = base64.b64decode(req_get.json()['content']).decode('utf-8')
-                                    df_raw_csv = pd.read_csv(io.StringIO(conteudo_bruto), header=None, dtype=str)
-                                    
-                                    indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
-                                    data_hoje_str = datetime.now().strftime("%Y-%m-%d")
-                                    
-                                    for idx_orig in indices_para_alterar:
-                                        linha_idx = int(idx_orig)
-                                        for col_idx in range(len(df_raw_csv.columns)):
-                                            celula_val = str(df_raw_csv.iloc[linha_idx, col_idx]).upper()
-                                            if "PENDENTE" in celula_val or "PEND" in celula_val:
-                                                df_raw_csv.iloc[linha_idx, col_idx] = data_hoje_str
-                                    
-                                    if atualizar_csv_completo(df_raw_csv):
-                                        st.success(f"Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
-                                        st.balloons()
-                                        
-                                        # CORREÇÃO DO LOOPING: Limpa o campo do crachá na memória antes de recarregar
-                                        st.session_state["input_cracha_baixa"] = ""
-                                        st.rerun()
-                                    else:
-                                        st.error("Erro ao salvar no GitHub.")
+                                for id_reg in indices_para_alterar:
+                                    supabase.table("entregas_epi").update({"data_entrega": data_hoje_str}).eq("id", id_reg).execute()
+                                
+                                st.success(f"Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
+                                st.balloons()
+                                
+                                st.session_state["input_cracha_baixa"] = ""
+                                st.rerun()
                             except Exception as ex:
-                                st.error(f"Falha técnica: {ex}")
+                                st.error(f"Falha técnica ao atualizar Supabase: {ex}")
+
 # ==============================================================================
 # VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
 # ==============================================================================
@@ -503,7 +440,6 @@ elif menu == "disparador_alertas":
     if df_base_completa.empty:
         st.info("Nenhum histórico coletado para gerar alertas.")
     else:
-        # Criando agora TRÊS abas para separar os tipos de cobrança
         aba_assinaturas, aba_validades, aba_gestores = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos", "🏢 Cobrança por Gestor (Departamento)"])
         
         # ----------------------------------------------------------------------
@@ -546,7 +482,7 @@ elif menu == "disparador_alertas":
                     col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Assinatura</a>', unsafe_allow_html=True)
 
         # ----------------------------------------------------------------------
-        # ABA 2: EPIS VENCIDOS E CRÍTICOS (ALERTA DE VALIDADE E RENOVAÇÃO)
+        # ABA 2: EPIS VENCIDOS E CRÍTICOS
         # ----------------------------------------------------------------------
         with aba_validades:
             df_validades_alertas = df_base_completa.sort_values(by="Data Entrega", ascending=True)
@@ -656,12 +592,12 @@ elif menu == "disparador_alertas":
                             total_irreg = len(df_ass_dep) + len(df_epi_dep)
                             c_info.write(f"Há um total de **{total_irreg} irregularidades** somando todos os funcionários da(o) **{depto}**.")
                             
-                            # Prepara o link mailto (sem destinatário, para o usuário preencher o gestor)
                             assunto_depto = urllib.parse.quote(f"Relatório de Pendências de EPIs (HST) - {depto}")
                             corpo_depto = urllib.parse.quote(texto_email)
                             link_mailto_depto = f"mailto:?subject={assunto_depto}&body={corpo_depto}"
                             
                             c_btn.markdown(f'<a href="{link_mailto_depto}" target="_blank" style="display:inline-block; padding:8px 12px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:13px; font-weight:bold; text-align:center;">✉️ Notificar Gestor(a)</a>', unsafe_allow_html=True)
+
 # ==============================================================================
 # VISÕES DE DASHBOARD E ALERTAS (DEMAIS TELAS)
 # ==============================================================================
@@ -694,7 +630,6 @@ else:
             (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
             (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
             (df_alertas_filtrado['Status'].isin(status_selecionados))
-
         ]
 
         if menu == "dashboard":
