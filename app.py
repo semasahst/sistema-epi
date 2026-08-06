@@ -607,37 +607,62 @@ elif menu == "disparador_alertas":
 # ==============================================================================
 elif menu == "auditoria":
     st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
-    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolavel), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
+    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
     
-    with st.spinner("Extraindo logs criptografados do banco de dados..."):
+    with st.spinner("Extraindo logs do banco de dados..."):
         try:
-            # Puxa a base bruta direto do Supabase, incluindo o created_at (Prova de Ouro)
+            # Puxa a base bruta direto do Supabase
             resposta_audit = supabase.table("entregas_epi").select("*").execute()
             df_audit = pd.DataFrame(resposta_audit.data)
             
             if df_audit.empty:
                 st.info("Nenhum registro localizado no banco de dados.")
             else:
-                # Renomeia as colunas para o auditor entender exatamente o que é cada dado
+                # 1. Padroniza todos os nomes de colunas do Supabase para minúsculo e sem espaços extras
+                df_audit.columns = [str(c).lower().strip() for c in df_audit.columns]
+                
+                # 2. Trava defensiva: garante que todas as colunas esperadas existam para evitar KeyError
+                colunas_obrigatorias = {
+                    "id": "N/A",
+                    "created_at": "Não registrado",
+                    "re": "N/A",
+                    "nome_funcionario": "N/A",
+                    "epi": "N/A",
+                    "data_entrega": "N/A"
+                }
+                
+                for col_nome, val_padrao in colunas_obrigatorias.items():
+                    if col_nome not in df_audit.columns:
+                        df_audit[col_nome] = val_padrao
+
+                # 3. Renomeia as colunas para exibição e relatório no Excel (sem acentos nos títulos para evitar erros)
                 df_audit = df_audit.rename(columns={
-                    "id": "ID Transação",
-                    "created_at": "Carimbo de Tempo do Servidor (Prova Inviolavel)",
+                    "id": "ID Transacao",
+                    "created_at": "Carimbo de Tempo (Prova Inviolavel)",
                     "re": "RE Colaborador",
                     "nome_funcionario": "Nome do Colaborador",
                     "epi": "EPI Entregue",
-                    "data_entrega": "Data de Referência da Baixa/Assinatura"
+                    "data_entrega": "Data de Referencia da Baixa/Assinatura"
                 })
                 
-                # Reorganiza a ordem das colunas para destacar o carimbo de tempo
-                ordem_colunas = ["ID Transação", "Carimbo de Tempo do Servidor (Prova Inviolável)", "RE Colaborador", "Nome do Colaborador", "EPI Entregue", "Data de Referência da Baixa/Assinatura"]
-                df_audit = df_audit[ordem_colunas]
+                # 4. Reorganiza a ordem exata das colunas de forma segura
+                colunas_ordenadas = [
+                    "ID Transacao", 
+                    "Carimbo de Tempo (Prova Inviolavel)", 
+                    "RE Colaborador", 
+                    "Nome do Colaborador", 
+                    "EPI Entregue", 
+                    "Data de Referencia da Baixa/Assinatura"
+                ]
                 
-                st.success(f"Extração concluída: {len(df_audit)} registros consolidados protegidos contra alteração.")
+                df_audit = df_audit[colunas_ordenadas]
                 
-                # Mostra uma prévia na tela
+                st.success(f"Extração concluída com sucesso: {len(df_audit)} registros consolidados.")
+                
+                # Exibe a prévia da tabela na tela do app
                 st.dataframe(df_audit, use_container_width=True)
                 
-                # Configura a exportação para CSV compatível nativamente com o Excel (utf-8-sig)
+                # Prepara o arquivo CSV formatado para abrir direto no Excel sem desconfigurar
                 csv_audit = df_audit.to_csv(index=False, sep=';', encoding='utf-8-sig')
                 
                 st.markdown("---")
