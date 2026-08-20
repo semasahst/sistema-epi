@@ -823,14 +823,14 @@ else:
                 df_venc_exibir = df_painel_filtrado.copy()
                 df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
+          st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Status"]], use_container_width=True)
 
 # ==============================================================================
 # VISÃO 6: DASHBOARD DE GESTÃO
 # ==============================================================================
 elif menu == "dashboard":
     st.header("📊 Dashboard de Gestão do Programa de EPI")
-    
+
     if df_base_completa.empty:
         st.info("Nenhum dado disponível para compor o Dashboard.")
     else:
@@ -838,20 +838,20 @@ elif menu == "dashboard":
         tot_ass_pendentes = len(df_base_completa[df_base_completa["Assinatura"] == "Pendente"])
         tot_vencidos = len(df_base_completa[df_base_completa["Status"] == "VENCIDO"])
         tot_criticos = len(df_base_completa[df_base_completa["Status"] == "CRITICO (Ate 15 dias)"])
-        
+
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total de Lançamentos", tot_registros)
         m2.metric("Assinaturas Pendentes", tot_ass_pendentes, delta_color="inverse")
         m3.metric("EPIs Vencidos", tot_vencidos, delta_color="inverse")
         m4.metric("Atenção Crítica (15 dias)", tot_criticos, delta_color="off")
-        
+
         st.markdown("---")
         col_db1, col_db2 = st.columns(2)
-        
+
         with col_db1:
             st.markdown("#### Distribuição por Status de Validade")
             st.bar_chart(df_base_completa["Status"].value_counts())
-            
+
         with col_db2:
             st.markdown("#### Entregas por Departamento")
             st.bar_chart(df_base_completa["Departamento"].value_counts())
