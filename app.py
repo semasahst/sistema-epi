@@ -16,12 +16,12 @@ from reportlab.lib import colors
 # Configuração global da página do Streamlit
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
-# CORRETO:
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 GITHUB_USER = "semasahst"
 GITHUB_REPO = "sistema-epi"
+
 # ==============================================================================
-# CONEXÃO COM O SUPABASE (Substitui a gravação no GitHub)
+# CONEXÃO COM O SUPABASE
 # ==============================================================================
 try:
     url: str = st.secrets["SUPABASE_URL"]
@@ -34,8 +34,6 @@ except Exception as e:
 # ==============================================================================
 # LEITURA DAS TABELAS MESTRE (Mantidas no GitHub por serem leitura simples)
 # ==============================================================================
-GITHUB_USER = "semasahst"  
-GITHUB_REPO = "sistema-epi"
 URL_FUNCIONARIOS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/funcionarios.csv"
 URL_EPIS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/epis.csv"
 
@@ -138,7 +136,7 @@ def construir_base_alertas():
             "Departamento": departamento,
             "EPI": nome_epi, 
             "CA": mapa_ca.get(nome_epi, "N/A"), 
-            "Qtd": 1,
+            "Qtd": row.get("qtd", 1), # Corrigido para extrair a quantidade enviada
             "Data Entrega": dt_entrega_parsed, 
             "Data Vencimento": dt_vencimento,
             "Dias Restantes": dias_restantes, 
@@ -229,7 +227,7 @@ dict_menu = {
     "dashboard": "Dashboard de Gestão",
     "vencidos": "EPIs Vencidos/A Vencer",
     "disparador_alertas": "Disparador de Alertas (HST)",
-    "auditoria": "Exportação para Auditoria" # <- NOVA OPÇÃO AQUI
+    "auditoria": "Exportação para Auditoria"
 }
 
 opcao_selecionada = st.sidebar.selectbox(
@@ -268,6 +266,7 @@ if menu == "lancar_epi":
                 
         st.markdown("---")
         st.markdown("#### 🔒 Autenticação e Validação")
+        
         bypass_nfc = st.checkbox("Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
         
         situacao_assinatura = "PENDENTE"
@@ -288,13 +287,10 @@ if menu == "lancar_epi":
         st.markdown("---")
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
         
-        # ----------------------------------------------------------------------
-        # ALTERAÇÃO 1: Definir a quantidade para cada EPI selecionado
-        # ----------------------------------------------------------------------
         quantidades_epis = {}
         if epis_selecionados:
             st.markdown("##### 🔢 Defina a Quantidade de cada EPI:")
-            cols_qtd = st.columns(min(len(epis_selecionados), 3))  # Organiza em até 3 colunas
+            cols_qtd = st.columns(min(len(epis_selecionados), 3))
             
             for index, epi_item in enumerate(epis_selecionados):
                 col_atual = cols_qtd[index % 3]
@@ -322,14 +318,11 @@ if menu == "lancar_epi":
             else:
                 lote_linhas = []
                 for epi in epis_selecionados:
-                    # ----------------------------------------------------------
-                    # ALTERAÇÃO 2: Incluir a coluna "qtd" no dicionário do lote
-                    # ----------------------------------------------------------
                     lote_linhas.append({
                         "re": str(re_digitado),
                         "nome_funcionario": str(nome_funcionario),
                         "epi": str(epi),
-                        "qtd": int(quantidades_epis.get(epi, 1)),  # <-- Quantidade inserida aqui!
+                        "qtd": int(quantidades_epis.get(epi, 1)), 
                         "data_entrega": "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d")
                     })
                 
@@ -342,12 +335,11 @@ if menu == "lancar_epi":
                         st.error(f"Erro ao salvar no Supabase: {e}")
 
 # ==============================================================================
-# VISÃO: COLETAR ASSINATURAS PENDENTES
+# VISÃO 2: COLETAR ASSINATURAS PENDENTES
 # ==============================================================================
 elif menu == "coletar_ass":
     st.header("🖊️ Coleta de Assinaturas Pendentes")
     
-    # Exemplo de consulta das pendências
     res_pendentes = supabase.table("entregas_epi").select("*").eq("data_entrega", "PENDENTE").execute()
     df_pendentes = pd.DataFrame(res_pendentes.data)
     
@@ -359,7 +351,6 @@ elif menu == "coletar_ass":
         st.markdown("---")
         st.markdown("### 🔒 Validação de Baixa Segura (Presencial)")
         
-        # Callback para limpar o input sem estourar erro de session_state
         if "limpar_cracha" not in st.session_state:
             st.session_state.limpar_cracha = False
 
@@ -376,23 +367,17 @@ elif menu == "coletar_ass":
         if cracha_input:
             data_hoje = datetime.now().strftime("%Y-%m-%d")
             
-            # Filtra registros que batem com o cracha/RE digitado
             try:
-                # Atualização em lote no Supabase
                 res_upd = supabase.table("entregas_epi") \
                     .update({"data_entrega": data_hoje}) \
                     .eq("data_entrega", "PENDENTE") \
                     .execute()
                 
                 qtd_baixadas = len(res_upd.data) if res_upd.data else 0
-                
+            
                 if qtd_baixadas > 0:
                     st.success(f"Sucesso! {qtd_baixadas} pendências eliminadas e assinadas!")
-                    
-                    # Registra log da operação no GitHub
                     log_msg = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},BAIXA_LOTE,{qtd_baixadas}_itens,SUCESSO\n"
-                    
-                    # Prepara a limpeza do campo na próxima renderização
                     st.session_state.limpar_cracha = True
                     st.rerun()
                 else:
@@ -400,7 +385,6 @@ elif menu == "coletar_ass":
             except Exception as e:
                 st.error(f"Erro ao atualizar no Supabase: {e}")
 
-       
 # ==============================================================================
 # VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
 # ==============================================================================
@@ -441,9 +425,6 @@ elif menu == "gerar_ficha":
                         
                         st.markdown("---")
                         
-                        # ------------------------------------------------------
-                        # DOWNLOADS: FICHA OFICIAL E TERMO ANEXADO
-                        # ------------------------------------------------------
                         col_pdf1, col_pdf2 = st.columns(2)
                         
                         with col_pdf1:
@@ -456,7 +437,6 @@ elif menu == "gerar_ficha":
                             )
                         
                         with col_pdf2:
-                            # Busca o Termo no GitHub usando re_exportar
                             url_termo = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/termos_aceite/termo_{re_exportar}.pdf"
                             req_termo = requests.get(url_termo, headers={"Authorization": f"token {GITHUB_TOKEN}"})
 
@@ -470,13 +450,10 @@ elif menu == "gerar_ficha":
                                 )
                             else:
                                 st.info("⚠️ Sem Termo de Aceite NFC cadastrado.")
-                        # ------------------------------------------------------
-                        # UPLOAD DO TERMO DE ACEITE (Dentro da visão correta)
-                        # ------------------------------------------------------
+                                
                         st.markdown("---")
                         st.subheader("📄 Upload do Termo de Aceite NFC Assinado")
                         
-                        # Inicializa as chaves no session_state para permitir o reset dos campos
                         if "key_re_termo" not in st.session_state:
                             st.session_state.key_re_termo = ""
                         if "uploader_key" not in st.session_state:
@@ -521,8 +498,6 @@ elif menu == "gerar_ficha":
                                     req_put = requests.put(url_api, headers=headers, json=payload)
                                     if req_put.status_code in [200, 201]:
                                         st.success(f"Termo do RE {re_termo} salvo com sucesso!")
-                                        
-                                        # Reseta os campos alterando as chaves do estado e recarregando a tela
                                         st.session_state.key_re_termo = ""
                                         st.session_state.uploader_key += 1
                                         st.rerun()
@@ -530,14 +505,8 @@ elif menu == "gerar_ficha":
                                         st.error(f"Erro na API do GitHub (Status {req_put.status_code}).")
                                 except Exception as e:
                                     st.error(f"Falha ao processar arquivo: {e}")
-        # ----------------------------------------------------------------------
-        # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
-        # ----------------------------------------------------------------------
-      # ==============================================================================
-# EXPORTAR LOGS DA OPERAÇÃO
-    st.markdown("### 📊 Exportar Logs da Operação")
 
-    # Valida qual DataFrame utilizar para os logs
+    st.markdown("### 📊 Exportar Logs da Operação")
     df_exportar_logs = df_base_completa if 'df_base_completa' in locals() and not df_base_completa.empty else None
 
     if df_exportar_logs is not None and not df_exportar_logs.empty:
@@ -554,285 +523,13 @@ elif menu == "gerar_ficha":
         st.info("Nenhum registro de log disponível para exportação no momento.")
 
 # ==============================================================================
-# VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
-# ==============================================================================
-elif menu == "disparador_alertas":
-    st.header("📢 Central de Disparos e Alertas Consolidados (HST)")
-    st.markdown("Painel dedicado para o time do HST disparar notificações em massa de cobrança via e-mail corporativo.")
-    
-    if df_base_completa.empty:
-        st.info("Nenhum histórico coletado para gerar alertas.")
-    else:
-        aba_assinaturas, aba_validades, aba_gestores = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos", "🏢 Cobrança por Gestor (Departamento)"])
-        
-        # ----------------------------------------------------------------------
-        # ABA 1: ASSINATURAS PENDENTES
-        # ----------------------------------------------------------------------
-        with aba_assinaturas:
-            df_pendentes_geral = df_base_completa[df_base_completa['Assinatura'] == "Pendente"]
-            
-            if df_pendentes_geral.empty:
-                st.success("Excelente! O Semasa não possui nenhuma assinatura pendente hoje.")
-            else:
-                st.warning(f"Existem atualmente {len(df_pendentes_geral)} assinaturas pendentes no sistema.")
-                
-                func_agrupados = df_pendentes_geral.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="Itens Pendentes")
-                st.dataframe(func_agrupados, use_container_width=True)
-                
-                st.markdown("### ⚡ Cobrança de Assinatura")
-                for _, row in func_agrupados.iterrows():
-                    re_f = row["RE"]
-                    nome_f = row["Funcionário"]
-                    email_f = row["Email"]
-                    qtd_f = row["Itens Pendentes"]
-                    
-                    df_itens_f = df_pendentes_geral[df_pendentes_geral["RE"] == re_f]
-                    lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
-                    
-                    assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
-                    corpo_lote = urllib.parse.quote(
-                        f"Prezado(a) {nome_f}, "
-                        f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA: "
-                        f"{lista_itens} "
-                        f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Por favor, compareça ao HST munido de seu crachá NFC. "
-                        f"Atenciosamente, Equipe de Segurança do Trabalho - SEMASA"
-                    )
-                    
-                    link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
-                    
-                    col_c1, col_c2 = st.columns([3, 1])
-                    col_c1.write(f"👤 **{nome_f}** (RE: {re_f}) — {qtd_f} assinatura(s) pendente(s)")
-                    col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Assinatura</a>', unsafe_allow_html=True)
-
-       # ----------------------------------------------------------------------
-        # ABA 2: EPIS VENCIDOS E CRÍTICOS
-        # ----------------------------------------------------------------------
-        with aba_validades:
-            df_venc_crit = df_base_completa[df_base_completa['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
-            
-            if df_venc_crit.empty:
-                st.success("Nenhum EPI vencido ou em estado crítico no momento!")
-            else:
-                st.warning(f"Existem {len(df_venc_crit)} EPIs em estado crítico ou já vencidos.")
-                
-                func_venc_agrupados = df_venc_crit.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="EPIs Críticos/Vencidos")
-                st.dataframe(func_venc_agrupados, use_container_width=True)
-                
-                st.markdown("### ⚡ Notificação de Troca de EPI")
-                for _, row in func_venc_agrupados.iterrows():
-                    re_f = row["RE"]
-                    nome_f = row["Funcionário"]
-                    email_f = row["Email"]
-                    qtd_v = row["EPIs Críticos/Vencidos"]
-                    
-                    df_itens_v = df_venc_crit[df_venc_crit["RE"] == re_f]
-                    lista_itens_v = "%0A".join([f"- {item['EPI']} (Status: {item['Status']} | Vencimento: {item['Data Vencimento'].strftime('%d/%m/%Y')})" for _, item in df_itens_v.iterrows()])
-                    
-                    assunto_venc = urllib.parse.quote(f"ALERTA: Substituição de EPI Necessária - RE {re_f}")
-                    corpo_venc = urllib.parse.quote(
-                        f"Prezado(a) {nome_f},\n\n"
-                        f"Identificamos que você possui {qtd_v} equipamento(s) de proteção vencido(s) ou próximo(s) do vencimento:\n"
-                        f"{lista_itens_v}\n\n"
-                        f"Solicitamos o comparecimento ao setor de HST para realizar a substituição e a retirada do novo material.\n\n"
-                        f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
-                    )
-                    
-                    link_mailto_venc = f"mailto:{email_f}?subject={assunto_venc}&body={corpo_venc}"
-                    
-                    col_v1, col_v2 = st.columns([3, 1])
-                    col_v1.write(f"⚠️ **{nome_f}** (RE: {re_f}) — {qtd_v} item(ns) exigindo atenção")
-                    col_v2.markdown(f'<a href="{link_mailto_venc}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#E65100; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Alertar Troca</a>', unsafe_allow_html=True)
-
-        # ----------------------------------------------------------------------
-        # ABA 3: COBRANÇA POR GESTOR (DEPARTAMENTO)
-        # ----------------------------------------------------------------------
-        with aba_gestores:
-            st.markdown("### 🏢 Cobrança Consolidada por Setor/Departamento")
-            deptos_disponiveis = df_base_completa["Departamento"].unique().tolist()
-            depto_sel = st.selectbox("Selecione o Departamento para Notificar a Chefia:", options=deptos_disponiveis)
-            
-            if depto_sel:
-                df_depto = df_base_completa[(df_base_completa["Departamento"] == depto_sel) & ((df_base_completa["Assinatura"] == "Pendente") | (df_base_completa["Status"] != "Regular"))]
-                
-                if df_depto.empty:
-                    st.success(f"O departamento **{depto_sel}** está 100% regularizado!")
-                else:
-                    st.dataframe(df_depto[["RE", "Funcionário", "EPI", "Status", "Assinatura"]], use_container_width=True)
-                    
-                    resumo_depto = "%0A".join([f"- {row['Funcionário']} (RE: {row['RE']}) | Item: {row['EPI']} | Status Assinatura: {row['Assinatura']} | Status Validade: {row['Status']}" for _, row in df_depto.iterrows()])
-                    
-                    assunto_gestor = urllib.parse.quote(f"RELATÓRIO PENDÊNCIAS EPI - Setor: {depto_sel}")
-                    corpo_gestor = urllib.parse.quote(
-                        f"Prezado Gestor do setor {depto_sel},\n\n"
-                        f"Encaminhamos o relatório atualizado de pendências de segurança dos colaboradores sob sua gestão:\n\n"
-                        f"{resumo_depto}\n\n"
-                        f"Solicitamos o apoio na orientação da equipe para regularização imediata junto ao HST.\n\n"
-                        f"Atenciosamente,\nEngenharia e Segurança do Trabalho - SEMASA"
-                    )
-                    
-                    link_mailto_gestor = f"mailto:?subject={assunto_gestor}&body={corpo_gestor}"
-                    st.markdown(f'<a href="{link_mailto_gestor}" target="_blank" style="padding:8px 16px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:14px; font-weight:bold;">✉️ Enviar Relatório ao Gestor do Setor</a>', unsafe_allow_html=True)
-
-# ==============================================================================
-# VISÃO 5: EXPORTAÇÃO PARA AUDITORIA E MTE
-# ==============================================================================
-elif menu == "auditoria":
-    st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
-    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
-    
-    with st.spinner("Extraindo logs do banco de dados..."):
-        try:
-            # Puxa a base bruta direto do Supabase
-            resposta_audit = supabase.table("entregas_epi").select("*").execute()
-            df_audit = pd.DataFrame(resposta_audit.data)
-            
-            if df_audit.empty:
-                st.info("Nenhum registro localizado no banco de dados.")
-            else:
-                # 1. Padroniza todos os nomes de colunas do Supabase para minúsculo e sem espaços extras
-                df_audit.columns = [str(c).lower().strip() for c in df_audit.columns]
-                
-                # 2. Trava defensiva: garante que todas as colunas esperadas existam para evitar KeyError
-                colunas_obrigatorias = {
-                    "id": "N/A",
-                    "created_at": "Não registrado",
-                    "re": "N/A",
-                    "nome_funcionario": "N/A",
-                    "epi": "N/A",
-                    "data_entrega": "N/A"
-                }
-                
-                for col_nome, val_padrao in colunas_obrigatorias.items():
-                    if col_nome not in df_audit.columns:
-                        df_audit[col_nome] = val_padrao
-
-                # 3. Renomeia as colunas para exibição e relatório no Excel (sem acentos nos títulos para evitar erros)
-                df_audit = df_audit.rename(columns={
-                    "id": "ID Transacao",
-                    "created_at": "Carimbo de Tempo (Prova Inviolavel)",
-                    "re": "RE Colaborador",
-                    "nome_funcionario": "Nome do Colaborador",
-                    "epi": "EPI Entregue",
-                    "data_entrega": "Data de Referencia da Baixa/Assinatura"
-                })
-                
-                # 4. Reorganiza a ordem exata das colunas de forma segura
-                colunas_ordenadas = [
-                    "ID Transacao", 
-                    "Carimbo de Tempo (Prova Inviolavel)", 
-                    "RE Colaborador", 
-                    "Nome do Colaborador", 
-                    "EPI Entregue", 
-                    "Data de Referencia da Baixa/Assinatura"
-                ]
-                
-                df_audit = df_audit[colunas_ordenadas]
-                
-                st.success(f"Extração concluída com sucesso: {len(df_audit)} registros consolidados.")
-                
-                # Exibe a prévia da tabela na tela do app
-                st.dataframe(df_audit, use_container_width=True)
-                
-                # Prepara o arquivo CSV formatado para abrir direto no Excel sem desconfigurar
-                csv_audit = df_audit.to_csv(index=False, sep=';', encoding='utf-8-sig')
-                
-                st.markdown("---")
-                st.markdown("### 📥 Download do Arquivo Legal")
-                
-                st.download_button(
-                    label="Baixar Log Completo de Auditoria (Abrir no Excel)",
-                    data=csv_audit,
-                    file_name=f"Auditoria_HST_SEMASA_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                    mime="text/csv"
-                )
-                
-        except Exception as e:
-            st.error(f"Falha técnica ao acessar os logs do servidor: {e}")
-else:
-    if df_base_completa.empty:
-        st.warning("Aguardando a sincronização dos dados...")
-    else:
-        df_alertas_filtrado = df_base_completa.sort_values(by="Data Entrega", ascending=True)
-        df_alertas_filtrado = df_alertas_filtrado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
-
-        if not df_func.empty and len(df_func.columns) > 3:
-            mapa_cargos = {str(row.iloc[1]).replace('?', '').strip().upper(): str(row.iloc[3]).replace('?', '').strip() for _, row in df_func.iterrows()}
-            df_alertas_filtrado['Cargo'] = df_alertas_filtrado['Funcionário'].str.strip().str.upper().map(mapa_cargos).fillna("Não Informado")
-        else:
-            df_alertas_filtrado['Cargo'] = "Não Informado"
-
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Filtros do Painel")
-        
-        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist())
-        deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
-        
-        lista_cargos = sorted(df_alertas_filtrado['Cargo'].dropna().unique().tolist())
-        cargos_selecionados = st.sidebar.multiselect("Filtrar por Cargo:", options=lista_cargos, default=lista_cargos)
-        
-        lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist())
-        status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
-        
-        df_painel_filtrado = df_alertas_filtrado[
-            (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
-            (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
-            (df_alertas_filtrado['Status'].isin(status_selecionados))
-        ]
-
-        if menu == "dashboard":
-            st.header("📊 Painel de Indicadores Estratégicos")
-            st.markdown("Indicadores de distribuição física e conformidade legal de fácil entendimento.")
-            
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
-            c2.metric("Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "Regular"]))
-            c3.metric("Alertas Críticos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "CRITICO (Ate 15 dias)"]))
-            c4.metric("Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "VENCIDO"]))
-            
-            st.markdown("---")
-            
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                st.markdown("#### Situação Geral de Validade")
-                if not df_painel_filtrado.empty:
-                    df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
-                    st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade')
-            with col_g2:
-                st.markdown("#### Modelos de EPIs Mais Entregues")
-                if not df_painel_filtrado.empty:
-                    df_epi_grafico = df_painel_filtrado.groupby('EPI').size().reset_index(name='Quantidade').sort_values(by='Quantidade', ascending=False)
-                    st.bar_chart(data=df_epi_grafico, x='EPI', y='Quantidade')
-            
-            st.markdown("---")
-            col_g3, col_g4 = st.columns(2)
-            with col_g3:
-                st.markdown("#### Volume de EPIs por Departamento")
-                if not df_painel_filtrado.empty:
-                    df_depto_grafico = df_painel_filtrado.groupby('Departamento').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
-                    st.bar_chart(data=df_depto_grafico, x='Departamento', y='Quantidade de EPIs')
-            with col_g4:
-                st.markdown("#### Volume de EPIs por Cargo")
-                if not df_painel_filtrado.empty:
-                    df_cargo_grafico = df_painel_filtrado.groupby('Cargo').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
-                    st.bar_chart(data=df_cargo_grafico, x='Cargo', y='Quantidade de EPIs')
-
-        elif menu == "vencidos":
-            st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
-            st.markdown("Lista completa detalhando os prazos de validade regulamentares dos EPIs ativos.")
-            if not df_painel_filtrado.empty:
-                df_venc_exibir = df_painel_filtrado.copy()
-                df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
-                df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Status"]], use_container_width=True)
-
-# ==============================================================================
-# VISÃO 6: DASHBOARD DE GESTÃO
+# VISÃO 4: DASHBOARD DE GESTÃO
 # ==============================================================================
 elif menu == "dashboard":
-    st.header("📊 Dashboard de Gestão do Programa de EPI")
-
+    st.header("📊 Dashboard de Gestão Estratégica")
+    
     if df_base_completa.empty:
-        st.info("Nenhum dado disponível para compor o Dashboard.")
+        st.info("Nenhum dado disponível para o Dashboard no momento.")
     else:
         tot_registros = len(df_base_completa)
         tot_ass_pendentes = len(df_base_completa[df_base_completa["Assinatura"] == "Pendente"])
@@ -855,14 +552,15 @@ elif menu == "dashboard":
         with col_db2:
             st.markdown("#### Entregas por Departamento")
             st.bar_chart(df_base_completa["Departamento"].value_counts())
+
 # ==============================================================================
-# VISÃO 7: EPIS VENCIDOS / A VENCER
+# VISÃO 5: EPIS VENCIDOS / A VENCER
 # ==============================================================================
 elif menu == "vencidos":
     st.header("⏳ Controle Sintético de Validades e Substituições")
     
     if df_base_completa.empty:
-        st.info("Nenhum registro para monitoramento.")
+        st.info("Nenhum registro para monitoramento no momento.")
     else:
         filtro_status = st.multiselect(
             "Filtrar por Status:",
@@ -870,5 +568,159 @@ elif menu == "vencidos":
             default=["VENCIDO", "CRITICO (Ate 15 dias)"]
         )
         
-        df_filtrado = df_base_completa[df_base_completa["Status"].isin(filtro_status)]
-        st.dataframe(df_filtrado, use_container_width=True)
+        df_venc = df_base_completa[df_base_completa["Status"].isin(filtro_status)]
+        if df_venc.empty:
+            st.success("Nenhum EPI encontrado com o status selecionado.")
+        else:
+            df_venc_exibir = df_venc.copy()
+            df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
+            df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
+            st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
+
+# ==============================================================================
+# VISÃO 6: CENTRAL DE DISPAROS DE E-MAILS (HST)
+# ==============================================================================
+elif menu == "disparador_alertas":
+    st.header("📢 Central de Disparos e Alertas Consolidados (HST)")
+    st.markdown("Painel dedicado para o time do HST disparar notificações em massa de cobrança via e-mail corporativo.")
+    
+    if df_base_completa.empty:
+        st.info("Nenhum histórico coletado para gerar alertas.")
+    else:
+        aba_assinaturas, aba_validades, aba_gestores = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos", "🏢 Cobrança por Gestor (Departamento)"])
+        
+        # ABA 1: ASSINATURAS PENDENTES
+        with aba_assinaturas:
+            df_pendentes_geral = df_base_completa[df_base_completa['Assinatura'] == "Pendente"]
+            if df_pendentes_geral.empty:
+                st.success("Excelente! O Semasa não possui nenhuma assinatura pendente hoje.")
+            else:
+                st.warning(f"Existem atualmente {len(df_pendentes_geral)} assinaturas pendentes no sistema.")
+                func_agrupados = df_pendentes_geral.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="Itens Pendentes")
+                st.dataframe(func_agrupados, use_container_width=True)
+                
+                st.markdown("### ⚡ Cobrança de Assinatura")
+                for _, row in func_agrupados.iterrows():
+                    re_f = row["RE"]
+                    nome_f = row["Funcionário"]
+                    email_f = row["Email"]
+                    qtd_f = row["Itens Pendentes"]
+                    df_itens_f = df_pendentes_geral[df_pendentes_geral["RE"] == re_f]
+                    lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
+                    
+                    assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
+                    corpo_lote = urllib.parse.quote(
+                        f"Prezado(a) {nome_f}, \n"
+                        f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA: \n"
+                        f"{lista_itens} \n\n"
+                        f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Por favor, compareça ao HST munido de seu crachá NFC. \n\n"
+                        f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
+                    col_c1, col_c2 = st.columns([3, 1])
+                    col_c1.write(f"👤 **{nome_f}** (RE: {re_f}) — {qtd_f} assinatura(s) pendente(s)")
+                    col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Assinatura</a>', unsafe_allow_html=True)
+        
+        # ABA 2: EPIS VENCIDOS E CRÍTICOS
+        with aba_validades:
+            df_venc_crit = df_base_completa[df_base_completa['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
+            if df_venc_crit.empty:
+                st.success("Nenhum EPI vencido ou em estado crítico no momento!")
+            else:
+                st.warning(f"Existem {len(df_venc_crit)} EPIs em estado crítico ou já vencidos.")
+                func_venc_agrupados = df_venc_crit.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="EPIs Críticos/Vencidos")
+                st.dataframe(func_venc_agrupados, use_container_width=True)
+                
+                st.markdown("### ⚡ Notificação de Troca de EPI")
+                for _, row in func_venc_agrupados.iterrows():
+                    re_f = row["RE"]
+                    nome_f = row["Funcionário"]
+                    email_f = row["Email"]
+                    qtd_v = row["EPIs Críticos/Vencidos"]
+                    df_itens_v = df_venc_crit[df_venc_crit["RE"] == re_f]
+                    lista_itens_v = "%0A".join([f"- {item['EPI']} (Status: {item['Status']} | Vencimento: {item['Data Vencimento'].strftime('%d/%m/%Y')})" for _, item in df_itens_v.iterrows()])
+                    
+                    assunto_venc = urllib.parse.quote(f"ALERTA: Substituição de EPI Necessária - RE {re_f}")
+                    corpo_venc = urllib.parse.quote(
+                        f"Prezado(a) {nome_f},\n\n"
+                        f"Identificamos que você possui {qtd_v} equipamento(s) de proteção vencido(s) ou próximo(s) do vencimento:\n"
+                        f"{lista_itens_v}\n\n"
+                        f"Solicitamos o comparecimento ao setor de HST para realizar a substituição e a retirada do novo material.\n\n"
+                        f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_venc = f"mailto:{email_f}?subject={assunto_venc}&body={corpo_venc}"
+                    col_v1, col_v2 = st.columns([3, 1])
+                    col_v1.write(f"⚠️ **{nome_f}** (RE: {re_f}) — {qtd_v} item(ns) exigindo atenção")
+                    col_v2.markdown(f'<a href="{link_mailto_venc}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#E65100; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Alertar Troca</a>', unsafe_allow_html=True)
+        
+        # ABA 3: COBRANÇA POR GESTOR
+        with aba_gestores:
+            st.markdown("### 🏢 Cobrança Consolidada por Setor/Departamento")
+            deptos_disponiveis = df_base_completa["Departamento"].unique().tolist()
+            depto_sel = st.selectbox("Selecione o Departamento para Notificar a Chefia:", options=deptos_disponiveis)
+            
+            if depto_sel:
+                df_depto = df_base_completa[(df_base_completa["Departamento"] == depto_sel) & ((df_base_completa["Assinatura"] == "Pendente") | (df_base_completa["Status"] != "Regular"))]
+                if df_depto.empty:
+                    st.success(f"O departamento **{depto_sel}** está 100% regularizado!")
+                else:
+                    st.dataframe(df_depto[["RE", "Funcionário", "EPI", "Status", "Assinatura"]], use_container_width=True)
+                    resumo_depto = "%0A".join([f"- {row['Funcionário']} (RE: {row['RE']}) | Item: {row['EPI']} | Status Assinatura: {row['Assinatura']} | Status Validade: {row['Status']}" for _, row in df_depto.iterrows()])
+                    
+                    assunto_gestor = urllib.parse.quote(f"RELATÓRIO PENDÊNCIAS EPI - Setor: {depto_sel}")
+                    corpo_gestor = urllib.parse.quote(
+                        f"Prezado Gestor do setor {depto_sel},\n\n"
+                        f"Encaminhamos o relatório atualizado de pendências de segurança dos colaboradores sob sua gestão:\n\n"
+                        f"{resumo_depto}\n\n"
+                        f"Solicitamos o apoio na orientação da equipe para regularização imediata junto ao HST.\n\n"
+                        f"Atenciosamente,\nEngenharia e Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_gestor = f"mailto:?subject={assunto_gestor}&body={corpo_gestor}"
+                    st.markdown(f'<a href="{link_mailto_gestor}" target="_blank" style="padding:8px 16px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:14px; font-weight:bold;">✉️ Enviar Relatório ao Gestor do Setor</a>', unsafe_allow_html=True)
+
+# ==============================================================================
+# VISÃO 7: EXPORTAÇÃO PARA AUDITORIA E MTE
+# ==============================================================================
+elif menu == "auditoria":
+    st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
+    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
+    
+    with st.spinner("Extraindo logs do banco de dados..."):
+        try:
+            resposta_audit = supabase.table("entregas_epi").select("*").execute()
+            df_audit = pd.DataFrame(resposta_audit.data)
+            
+            if df_audit.empty:
+                st.info("Nenhum registro localizado no banco de dados.")
+            else:
+                # 1. Padroniza todos os nomes de colunas para minúsculas
+                df_audit.columns = [str(c).lower().strip() for c in df_audit.columns]
+                
+                # 2. Programação Defensiva: Cria a coluna se não existir, evitando KeyError
+                if "created_at" not in df_audit.columns:
+                    df_audit["created_at"] = "Não registrado"
+                    
+                # 3. Mapeia e renomeia as colunas para padrão limpo (sem acentos na chave)
+                mapeamento_colunas = {
+                    "created_at": "Data e Hora da Transacao (Inviolavel)",
+                    "id": "ID Banco",
+                    "re": "RE",
+                    "nome_funcionario": "Funcionario",
+                    "epi": "EPI",
+                    "qtd": "Quantidade",
+                    "data_entrega": "Data de Entrega Declarada"
+                }
+                
+                df_audit = df_audit.rename(columns=mapeamento_colunas)
+                st.dataframe(df_audit, use_container_width=True)
+                
+                # 4. Geração do Arquivo CSV
+                csv_audit = df_audit.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Baixar Base Bruta para Auditoria (CSV)",
+                    data=csv_audit,
+                    file_name=f"auditoria_bruta_epis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        except Exception as e:
+            st.error(f"Erro ao extrair e
