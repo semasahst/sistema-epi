@@ -530,6 +530,22 @@ elif menu == "gerar_ficha":
                                         st.error(f"Erro na API do GitHub (Status {req_put.status_code}).")
                                 except Exception as e:
                                     st.error(f"Falha ao processar arquivo: {e}")
+        # ----------------------------------------------------------------------
+        # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
+        # ----------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 📊 Exportar Logs da Operação")
+        
+        # Converte o histórico de pendências/baixados em CSV para download individual
+        csv_logs = df_pendentes.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="📥 Baixar Relatório de Pendências (CSV)",
+            data=csv_logs,
+            file_name=f"log_pendencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            key="btn_download_log_ind"
+        )
     
 # ==============================================================================
 # VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
@@ -874,22 +890,6 @@ elif menu == "logs_auditoria":
             data=conteudo_logs,
             file_name=f"logs_auditoria_semasa_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
-        )
-        # ----------------------------------------------------------------------
-        # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
-        # ----------------------------------------------------------------------
-        st.markdown("---")
-        st.markdown("### 📊 Exportar Logs da Operação")
-        
-        # Converte o histórico de pendências/baixados em CSV para download individual
-        csv_logs = df_pendentes.to_csv(index=False).encode('utf-8')
-        
-        st.download_button(
-            label="📥 Baixar Relatório de Pendências (CSV)",
-            data=csv_logs,
-            file_name=f"log_pendencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            key="btn_download_log_ind"
         )
     else:
         st.warning("Nenhum registro de log encontrado até o momento.")
