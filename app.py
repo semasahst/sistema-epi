@@ -390,7 +390,7 @@ elif menu == "coletar_ass":
                 st.error(f"Erro ao atualizar no Supabase: {e}")
 
 # ==============================================================================
-# VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
+# VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6) E LOGS INDIVIDUAIS
 # ==============================================================================
 elif menu == "gerar_ficha":
     st.header("📄 Ficha de Registro de EPIs em PDF (Norma Regulamentadora NR-6)")
@@ -509,6 +509,22 @@ elif menu == "gerar_ficha":
                                         st.error(f"Erro na API do GitHub (Status {req_put.status_code}).")
                                 except Exception as e:
                                     st.error(f"Falha ao processar arquivo: {e}")
+
+                        # ------------------------------------------------------------------
+                        # NOVO BLOCO: EXPORTAR LOGS ESPECÍFICOS DO RE (Substitui o Log Geral)
+                        # ------------------------------------------------------------------
+                        st.markdown("---")
+                        st.markdown("### 📊 Exportar Logs do Colaborador")
+                        st.markdown(f"Faça o download da base de dados contendo apenas o histórico do RE: **{re_exportar}**.")
+                        
+                        csv_logs_func = df_historico_func.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label=f"📥 Baixar Logs em CSV (RE {re_exportar})",
+                            data=csv_logs_func,
+                            file_name=f"logs_epi_RE_{re_exportar}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv",
+                            key="btn_download_logs_colaborador"
+                        )
 
 # ==============================================================================
 # VISÃO 4: DASHBOARD DE GESTÃO (COM FILTROS E MAIS GRÁFICOS)
@@ -703,4 +719,106 @@ elif menu == "disparador_alertas":
                         f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
                     )
                     link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
-                    col_c1
+                    col_c1, col_c2 = st.columns([3, 1])
+                    col_c1.write(f"👤 **{nome_f}** (RE: {re_f}) — {qtd_f} assinatura(s) pendente(s)")
+                    col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Assinatura</a>', unsafe_allow_html=True)
+        
+        # ABA 2: EPIS VENCIDOS E CRÍTICOS
+        with aba_validades:
+            df_venc_crit = df_base_completa[df_base_completa['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
+            if df_venc_crit.empty:
+                st.success("Nenhum EPI vencido ou em estado crítico no momento!")
+            else:
+                st.warning(f"Existem {len(df_venc_crit)} EPIs em estado crítico ou já vencidos.")
+                func_venc_agrupados = df_venc_crit.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="EPIs Críticos/Vencidos")
+                st.dataframe(func_venc_agrupados, use_container_width=True)
+                
+                st.markdown("### ⚡ Notificação de Troca de EPI")
+                for _, row in func_venc_agrupados.iterrows():
+                    re_f = row["RE"]
+                    nome_f = row["Funcionário"]
+                    email_f = row["Email"]
+                    qtd_v = row["EPIs Críticos/Vencidos"]
+                    df_itens_v = df_venc_crit[df_venc_crit["RE"] == re_f]
+                    lista_itens_v = "%0A".join([f"- {item['EPI']} (Status: {item['Status']} | Vencimento: {item['Data Vencimento'].strftime('%d/%m/%Y')})" for _, item in df_itens_v.iterrows()])
+                    
+                    assunto_venc = urllib.parse.quote(f"ALERTA: Substituição de EPI Necessária - RE {re_f}")
+                    corpo_venc = urllib.parse.quote(
+                        f"Prezado(a) {nome_f},\n\n"
+                        f"Identificamos que você possui {qtd_v} equipamento(s) de proteção vencido(s) ou próximo(s) do vencimento:\n"
+                        f"{lista_itens_v}\n\n"
+                        f"Solicitamos o comparecimento ao setor de HST para realizar a substituição e a retirada do novo material.\n\n"
+                        f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_venc = f"mailto:{email_f}?subject={assunto_venc}&body={corpo_venc}"
+                    col_v1, col_v2 = st.columns([3, 1])
+                    col_v1.write(f"⚠️ **{nome_f}** (RE: {re_f}) — {qtd_v} item(ns) exigindo atenção")
+                    col_v2.markdown(f'<a href="{link_mailto_venc}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#E65100; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Alertar Troca</a>', unsafe_allow_html=True)
+        
+        # ABA 3: COBRANÇA POR GESTOR
+        with aba_gestores:
+            st.markdown("### 🏢 Cobrança Consolidada por Setor/Departamento")
+            deptos_disponiveis = df_base_completa["Departamento"].unique().tolist()
+            depto_sel = st.selectbox("Selecione o Departamento para Notificar a Chefia:", options=deptos_disponiveis)
+            
+            if depto_sel:
+                df_depto = df_base_completa[(df_base_completa["Departamento"] == depto_sel) & ((df_base_completa["Assinatura"] == "Pendente") | (df_base_completa["Status"] != "Regular"))]
+                if df_depto.empty:
+                    st.success(f"O departamento **{depto_sel}** está 100% regularizado!")
+                else:
+                    st.dataframe(df_depto[["RE", "Funcionário", "Cargo", "EPI", "Status", "Assinatura"]], use_container_width=True)
+                    resumo_depto = "%0A".join([f"- {row['Funcionário']} (RE: {row['RE']}) | Item: {row['EPI']} | Status Assinatura: {row['Assinatura']} | Status Validade: {row['Status']}" for _, row in df_depto.iterrows()])
+                    
+                    assunto_gestor = urllib.parse.quote(f"RELATÓRIO PENDÊNCIAS EPI - Setor: {depto_sel}")
+                    corpo_gestor = urllib.parse.quote(
+                        f"Prezado Gestor do setor {depto_sel},\n\n"
+                        f"Encaminhamos o relatório atualizado de pendências de segurança dos colaboradores sob sua gestão:\n\n"
+                        f"{resumo_depto}\n\n"
+                        f"Solicitamos o apoio na orientação da equipe para regularização imediata junto ao HST.\n\n"
+                        f"Atenciosamente,\nEngenharia e Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_gestor = f"mailto:?subject={assunto_gestor}&body={corpo_gestor}"
+                    st.markdown(f'<a href="{link_mailto_gestor}" target="_blank" style="padding:8px 16px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:14px; font-weight:bold;">✉️ Enviar Relatório ao Gestor do Setor</a>', unsafe_allow_html=True)
+
+# ==============================================================================
+# VISÃO 7: EXPORTAÇÃO PARA AUDITORIA E MTE
+# ==============================================================================
+elif menu == "auditoria":
+    st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
+    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
+    
+    with st.spinner("Extraindo logs do banco de dados..."):
+        try:
+            resposta_audit = supabase.table("entregas_epi").select("*").execute()
+            df_audit = pd.DataFrame(resposta_audit.data)
+            
+            if df_audit.empty:
+                st.info("Nenhum registro localizado no banco de dados.")
+            else:
+                df_audit.columns = [str(c).lower().strip() for c in df_audit.columns]
+                
+                if "created_at" not in df_audit.columns:
+                    df_audit["created_at"] = "Não registrado"
+                    
+                mapeamento_colunas = {
+                    "created_at": "Data e Hora da Transacao (Inviolavel)",
+                    "id": "ID Banco",
+                    "re": "RE",
+                    "nome_funcionario": "Funcionario",
+                    "epi": "EPI",
+                    "qtd": "Quantidade",
+                    "data_entrega": "Data de Entrega Declarada"
+                }
+                
+                df_audit = df_audit.rename(columns=mapeamento_colunas)
+                st.dataframe(df_audit, use_container_width=True)
+                
+                csv_audit = df_audit.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Baixar Base Bruta para Auditoria (CSV)",
+                    data=csv_audit,
+                    file_name=f"auditoria_bruta_epis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        except Exception as e:
+            st.error(f"Erro ao extrair e formatar logs: {e}")
