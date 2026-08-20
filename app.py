@@ -15,7 +15,8 @@ from reportlab.lib import colors
 # Configuração global da página do Streamlit
 st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
 
-GITHUB_TOKEN = st.secrets["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"]
+# CORRETO:
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 GITHUB_USER = "semasahst"
 GITHUB_REPO = "sistema-epi"
 # ==============================================================================
