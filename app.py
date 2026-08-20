@@ -831,8 +831,8 @@ else:
         elif menu == "dashboard":
              st.header("📊 Dashboard de Gestão do Programa de EPI")
     
-        if df_base_completa.empty:
-        st.info("Nenhum dado disponível para compor o Dashboard.")
+             if df_base_completa.empty:
+             st.info("Nenhum dado disponível para compor o Dashboard.")
  else:
         tot_registros = len(df_base_completa)
         tot_ass_pendentes = len(df_base_completa[df_base_completa["Assinatura"] == "Pendente"])
