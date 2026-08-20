@@ -73,6 +73,10 @@ def construir_base_alertas():
     
     for _, row in df_hist.iterrows():
         id_registro = row.get("id")
+        
+        # Puxando o carimbo de data/hora inviolável do banco
+        carimbo_inviolavel = row.get("created_at", "Não registrado")
+        
         nome_epi = str(row.get("epi", "")).strip()
         nome_func = str(row.get("nome_funcionario", "")).strip()
         raw_data_entrega = str(row.get("data_entrega", "")).strip()
@@ -134,6 +138,7 @@ def construir_base_alertas():
             email_func = f"{re_vinculado}@semasa.sp.gov.br"
         
         linhas_processadas.append({
+            "Data e Hora da Transacao (Inviolavel)": carimbo_inviolavel, # <- INSERIDO AQUI
             "INDEX_ORIGINAL": id_registro,
             "RE": re_vinculado,
             "Funcionário": nome_func, 
@@ -142,7 +147,7 @@ def construir_base_alertas():
             "EPI": nome_epi, 
             "CA": mapa_ca.get(nome_epi, "N/A"), 
             "Qtd": row.get("qtd", 1),
-            "Data Entrega": dt_entrega_parsed, 
+            "Data Entrega Declarada": dt_entrega_parsed, 
             "Data Vencimento": dt_vencimento,
             "Dias Restantes": dias_restantes, 
             "Status": status_validade, 
@@ -192,7 +197,7 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
     
     tabela_dados = [["EPI / Descrição", "C.A.", "Qtd", "Data Entrega", "Forma de Assinatura"]]
     for _, row in df_itens.iterrows():
-        dt_str = row['Data Entrega'].strftime('%d/%m/%Y') if isinstance(row['Data Entrega'], datetime) else str(row['Data Entrega'])
+        dt_str = row['Data Entrega Declarada'].strftime('%d/%m/%Y') if isinstance(row['Data Entrega Declarada'], datetime) else str(row['Data Entrega Declarada'])
         tipo_ass = "Digital (NFC)" if row['Assinatura'] == "Assinado" else "PENDENTE (Assinar à caneta)"
         tabela_dados.append([row['EPI'], row['CA'], str(row['Qtd']), dt_str, tipo_ass])
         
@@ -423,8 +428,8 @@ elif menu == "gerar_ficha":
                         st.success(f"Funcionário localizado: {nome_oficial} | Setor: {depto_oficial}")
                         st.markdown("### Itens que constarão no documento:")
                         
-                        df_preview = df_historico_func[["EPI", "CA", "Qtd", "Data Entrega", "Assinatura"]].copy()
-                        df_preview["Data Entrega"] = df_preview["Data Entrega"].dt.strftime("%d/%m/%Y")
+                        df_preview = df_historico_func[["EPI", "CA", "Qtd", "Data Entrega Declarada", "Assinatura"]].copy()
+                        df_preview["Data Entrega Declarada"] = df_preview["Data Entrega Declarada"].dt.strftime("%d/%m/%Y")
                         st.dataframe(df_preview, use_container_width=True)
                         
                         st.markdown("---")
@@ -517,7 +522,12 @@ elif menu == "gerar_ficha":
                         st.markdown("### 📊 Exportar Logs do Colaborador")
                         st.markdown(f"Faça o download da base de dados contendo apenas o histórico do RE: **{re_exportar}**.")
                         
-                        csv_logs_func = df_historico_func.to_csv(index=False).encode('utf-8')
+                        # Reordenando colunas para colocar o Carimbo Inviolável em primeiro destaque no CSV
+                        colunas_ordenadas = ["Data e Hora da Transacao (Inviolavel)", "RE", "Funcionário", "Departamento", "Cargo", "EPI", "CA", "Qtd", "Data Entrega Declarada", "Data Vencimento", "Status", "Assinatura"]
+                        
+                        df_para_exportar = df_historico_func[colunas_ordenadas]
+
+                        csv_logs_func = df_para_exportar.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label=f"📥 Baixar Logs em CSV (RE {re_exportar})",
                             data=csv_logs_func,
@@ -543,7 +553,7 @@ elif menu == "dashboard":
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         with col_f1:
-            datas_validas = df_base_completa["Data Entrega"].dropna()
+            datas_validas = df_base_completa["Data Entrega Declarada"].dropna()
             min_dt = datas_validas.min().date() if not datas_validas.empty else datetime.now().date()
             max_dt = datas_validas.max().date() if not datas_validas.empty else datetime.now().date()
             
@@ -570,10 +580,10 @@ elif menu == "dashboard":
         
         if isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 2:
             dt_i, dt_f = intervalo_datas
-            df_dash = df_dash[(df_dash["Data Entrega"].dt.date >= dt_i) & (df_dash["Data Entrega"].dt.date <= dt_f)]
+            df_dash = df_dash[(df_dash["Data Entrega Declarada"].dt.date >= dt_i) & (df_dash["Data Entrega Declarada"].dt.date <= dt_f)]
         elif isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 1:
             dt_i = intervalo_datas[0]
-            df_dash = df_dash[df_dash["Data Entrega"].dt.date >= dt_i]
+            df_dash = df_dash[df_dash["Data Entrega Declarada"].dt.date >= dt_i]
             
         if depto_sel != "Todos":
             df_dash = df_dash[df_dash["Departamento"] == depto_sel]
@@ -675,9 +685,9 @@ elif menu == "vencidos":
             st.success("Nenhum EPI encontrado com o status selecionado.")
         else:
             df_venc_exibir = df_venc.copy()
-            df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
+            df_venc_exibir["Data Entrega Declarada"] = df_venc_exibir["Data Entrega Declarada"].dt.strftime("%d/%m/%Y")
             df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
-            st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
+            st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "Cargo", "EPI", "Data Entrega Declarada", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
 
 # ==============================================================================
 # VISÃO 6: CENTRAL DE DISPAROS DE E-MAILS (HST)
@@ -708,7 +718,7 @@ elif menu == "disparador_alertas":
                     email_f = row["Email"]
                     qtd_f = row["Itens Pendentes"]
                     df_itens_f = df_pendentes_geral[df_pendentes_geral["RE"] == re_f]
-                    lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
+                    lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega Declarada'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
                     
                     assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
                     corpo_lote = urllib.parse.quote(
