@@ -282,6 +282,28 @@ if menu == "lancar_epi":
             
         st.markdown("---")
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
+        
+        # ----------------------------------------------------------------------
+        # ALTERAÇÃO 1: Definir a quantidade para cada EPI selecionado
+        # ----------------------------------------------------------------------
+        quantidades_epis = {}
+        if epis_selecionados:
+            st.markdown("##### 🔢 Defina a Quantidade de cada EPI:")
+            cols_qtd = st.columns(min(len(epis_selecionados), 3))  # Organiza em até 3 colunas
+            
+            for index, epi_item in enumerate(epis_selecionados):
+                col_atual = cols_qtd[index % 3]
+                with col_atual:
+                    qtd_val = st.number_input(
+                        f"Qtd: {epi_item}", 
+                        min_value=1, 
+                        max_value=50, 
+                        value=1, 
+                        step=1, 
+                        key=f"qtd_{epi_item}"
+                    )
+                    quantidades_epis[epi_item] = qtd_val
+
         data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
             
         st.markdown("<br>", unsafe_allow_html=True)
@@ -295,10 +317,14 @@ if menu == "lancar_epi":
             else:
                 lote_linhas = []
                 for epi in epis_selecionados:
+                    # ----------------------------------------------------------
+                    # ALTERAÇÃO 2: Incluir a coluna "qtd" no dicionário do lote
+                    # ----------------------------------------------------------
                     lote_linhas.append({
                         "re": str(re_digitado),
                         "nome_funcionario": str(nome_funcionario),
                         "epi": str(epi),
+                        "qtd": int(quantidades_epis.get(epi, 1)),  # <-- Quantidade inserida aqui!
                         "data_entrega": "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d")
                     })
                 
