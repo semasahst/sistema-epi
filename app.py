@@ -830,14 +830,10 @@ if st.button("Salvar Termo de Aceite") and re_termo and arquivo_termo:
             st.success(f"Termo do RE {re_termo} salvo com sucesso!")
         else:
             st.error("Falha ao salvar o termo no servidor.")
-# Função para registrar log de auditoria
-def registrar_log_auditoria(re_colaborador, cracha_hex, qtd_itens):
-    data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ip_usuario = st.context.headers.get("X-Forwarded-For", "Localhost")
-    
-    novo_log = f'"{data_hora}","{re_colaborador}","{cracha_hex}","{qtd_itens}","{ip_usuario}"\n'
-    # Adicionar este log ao arquivo logs_auditoria.csv no GitHub via API
-    if menu == "logs_auditoria":
+# ==============================================================================
+# VISÃO: LOGS DE AUDITORIA
+# ==============================================================================
+elif menu == "logs_auditoria":
     st.header("🛡️ Logs de Auditoria e Segurança do Servidor")
     st.markdown("Histórico imutável de todas as assinaturas NFC e operações realizadas.")
     
