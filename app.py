@@ -823,7 +823,7 @@ else:
                 df_venc_exibir = df_painel_filtrado.copy()
                 df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
-          st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Status"]], use_container_width=True)
+                st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Status"]], use_container_width=True)
 
 # ==============================================================================
 # VISÃO 6: DASHBOARD DE GESTÃO
