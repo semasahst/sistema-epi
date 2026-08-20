@@ -448,28 +448,37 @@ elif menu == "gerar_ficha":
                         st.dataframe(df_preview, use_container_width=True)
                         
                         st.markdown("---")
-                        pdf_data = gerar_pdf_ficha(re_exportar, nome_oficial, depto_oficial, df_historico_func)
                         
-                        st.download_button(
-                            label="📥 Baixar Ficha de EPI Oficial (PDF)",
-                            data=pdf_data,
-                            file_name=f"Ficha_EPI_{re_exportar}_{nome_oficial.replace(' ', '_')}.pdf",
-                            mime="application/pdf"
-                        )
-# Botão de download do Termo anexado
-url_termo = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/termos_aceite/termo_{re_busca}.pdf"
-req_termo = requests.get(url_termo, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+                        # ------------------------------------------------------
+                        # DOWNLOADS: FICHA OFICIAL E TERMO ANEXADO
+                        # ------------------------------------------------------
+                        col_pdf1, col_pdf2 = st.columns(2)
+                        
+                        with col_pdf1:
+                            pdf_data = gerar_pdf_ficha(re_exportar, nome_oficial, depto_oficial, df_historico_func)
+                            st.download_button(
+                                label="📥 Baixar Ficha de EPI Oficial (PDF)",
+                                data=pdf_data,
+                                file_name=f"Ficha_EPI_{re_exportar}_{nome_oficial.replace(' ', '_')}.pdf",
+                                mime="application/pdf"
+                            )
+                        
+                        with col_pdf2:
+                            # Busca o Termo no GitHub usando re_exportar
+                            url_termo = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/termos_aceite/termo_{re_exportar}.pdf"
+                            req_termo = requests.get(url_termo, headers={"Authorization": f"token {GITHUB_TOKEN}"})
 
-if req_termo.status_code == 200:
-    pdf_bytes = base64.b64decode(req_termo.json()['content'])
-    st.download_button(
-        label="📥 Baixar Termo de Aceite NFC (PDF)",
-        data=pdf_bytes,
-        file_name=f"Termo_Aceite_NFC_{re_busca}.pdf",
-        mime="application/pdf"
-    )
-else:
-    st.info("⚠️ Este colaborador ainda não possui Termo de Aceite NFC cadastrado.")
+                            if req_termo.status_code == 200:
+                                pdf_bytes = base64.b64decode(req_termo.json()['content'])
+                                st.download_button(
+                                    label="📥 Baixar Termo de Aceite NFC (PDF)",
+                                    data=pdf_bytes,
+                                    file_name=f"Termo_Aceite_NFC_{re_exportar}.pdf",
+                                    mime="application/pdf"
+                                )
+                            else:
+                                st.info("⚠️ Sem Termo de Aceite NFC cadastrado.")
+    
 # ==============================================================================
 # VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
 # ==============================================================================
