@@ -723,4 +723,4 @@ elif menu == "auditoria":
                     mime="text/csv"
                 )
         except Exception as e:
-            st.error(f"Erro ao extrair e
+               st.error(f"Erro ao extrair e formatar logs: {e}")
