@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import urllib.parse
 import io
 import base64
+import requests
 from supabase import create_client, Client
 
 # Importações para a geração do PDF da Ficha de EPI (NR-6)
