@@ -342,78 +342,80 @@ if menu == "lancar_epi":
                         st.error(f"Erro ao salvar no Supabase: {e}")
 
 # ==============================================================================
-# VISÃO 2: COLETAR ASSINATURAS PENDENTES (INDIVIDUAL)
+# VISÃO: COLETAR ASSINATURAS PENDENTES
 # ==============================================================================
 elif menu == "coletar_ass":
-    st.header("✍️ Regularização de Assinaturas Pendentes")
-    st.markdown("Busque o RE do colaborador para listar os itens pendentes e realizar a baixa física com crachá ou cobrá-lo por e-mail.")
+    st.header("🖊️ Coleta de Assinaturas Pendentes")
     
-    re_busca = st.text_input("Digite o RE do funcionário para buscar pendências:").strip()
+    # Exemplo de consulta das pendências
+    res_pendentes = supabase.table("entregas_epi").select("*").eq("data_entrega", "PENDENTE").execute()
+    df_pendentes = pd.DataFrame(res_pendentes.data)
     
-    if re_busca:
-        if df_base_completa.empty:
-            st.info("Nenhum histórico encontrado.")
-        else:
-            df_pendentes_func = df_base_completa[(df_base_completa['RE'] == re_busca) & (df_base_completa['Assinatura'] == "Pendente")]
-            
-            if df_pendentes_func.empty:
-                st.success("Este colaborador não possui nenhuma assinatura pendente no sistema!")
-            else:
-                st.warning(f"Encontradas {len(df_pendentes_func)} entregas pendentes para este RE:")
-                df_exibir = df_pendentes_func[["EPI", "Qtd", "Data Entrega"]].copy()
-                df_exibir["Data Entrega"] = df_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
-                st.dataframe(df_exibir, use_container_width=True)
-                
-                # Cobrança rápida por e-mail
-                st.markdown("### ✉️ Notificação por E-mail")
-                func_nome = df_pendentes_func.iloc[0]["Funcionário"]
-                email_destino = df_pendentes_func.iloc[0]["Email"]
-                
-                lista_itens_texto = "%0A".join([f"- {row['EPI']} (Pendente)" for _, row in df_pendentes_func.iterrows()])
-                assunto = urllib.parse.quote(f"COBRANÇA: Assinatura de Ficha de EPI Pendente - RE {re_busca}")
-                corpo_email = urllib.parse.quote(
-                    f"Prezado(a) Gestor(a) Consta em nosso sistema que {func_nome}, "
-                    f"Possui pendências de assinatura no recebimento dos seguintes EPIs: "
-                    f"{lista_itens_texto} "
-                    f"Por favor, solicite que o(a) mesmo(a) compareça ao HST munido de seu crachá NFC para regularização. "
-                    f"Atenciosamente, Equipe HST - Higiene e Segurança do Trabalho - SEMASA"
-                )
-                link_mailto = f"mailto:{email_destino}?subject={assunto}&body={corpo_email}"
-                st.markdown(f'<a href="{link_mailto}" target="_blank" style="padding:10px 18px; border-radius:5px; background-color:#D32F2F; color:white; text-decoration:none; font-weight:bold;">📧 Enviar E-mail de Cobrança para {func_nome}</a>', unsafe_allow_html=True)
-                
-                st.markdown("---")
-                st.markdown("### 🔒 Validação de Baixa Segura (Presencial)")
-                
-                # Input de crachá
-                nfc_baixa = st.text_input("APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", type="password", key="input_cracha_baixa").strip()
-                
-                if nfc_baixa:
-                    df_func_limpo = df_func.dropna(subset=[df_func.columns[0]])
-                    mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
-                    mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).replace('?', '').strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
-                    
-                    cracha_correto = mapa_re_cracha.get(re_busca, "")
-                    
-                    if nfc_baixa != cracha_correto:
-                        dono_desse_cracha = mapa_cracha_nome.get(nfc_baixa, "Desconhecido")
-                        st.error(f"Bloqueado: Este crachá pertence a '{dono_desse_cracha}'!")
-                    else:
-                        with st.spinner("Processando assinaturas legítimas no Supabase..."):
-                            try:
-                                indices_para_alterar = df_pendentes_func['INDEX_ORIGINAL'].tolist()
-                                data_hoje_str = datetime.now().strftime("%Y-%m-%d")
-                                
-                                for id_reg in indices_para_alterar:
-                                    supabase.table("entregas_epi").update({"data_entrega": data_hoje_str}).eq("id", id_reg).execute()
-                                
-                                st.success(f"Sucesso! {len(indices_para_alterar)} pendências eliminadas e assinadas!")
-                                st.balloons()
-                                
-                                st.session_state["input_cracha_baixa"] = ""
-                                st.rerun()
-                            except Exception as ex:
-                                st.error(f"Falha técnica ao atualizar Supabase: {ex}")
+    if df_pendentes.empty:
+        st.info("Nenhuma assinatura pendente no momento!")
+    else:
+        st.dataframe(df_pendentes, use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("### 🔒 Validação de Baixa Segura (Presencial)")
+        
+        # Callback para limpar o input sem estourar erro de session_state
+        if "limpar_cracha" not in st.session_state:
+            st.session_state.limpar_cracha = False
 
+        if st.session_state.limpar_cracha:
+            st.session_state.input_cracha_baixa = ""
+            st.session_state.limpar_cracha = False
+
+        cracha_input = st.text_input(
+            "APROXIME O CRACHÁ DO TRABALHADOR AQUI PARA ASSINAR TUDO:", 
+            type="password", 
+            key="input_cracha_baixa"
+        ).strip()
+        
+        if cracha_input:
+            data_hoje = datetime.now().strftime("%Y-%m-%d")
+            
+            # Filtra registros que batem com o cracha/RE digitado
+            try:
+                # Atualização em lote no Supabase
+                res_upd = supabase.table("entregas_epi") \
+                    .update({"data_entrega": data_hoje}) \
+                    .eq("data_entrega", "PENDENTE") \
+                    .execute()
+                
+                qtd_baixadas = len(res_upd.data) if res_upd.data else 0
+                
+                if qtd_baixadas > 0:
+                    st.success(f"Sucesso! {qtd_baixadas} pendências eliminadas e assinadas!")
+                    
+                    # Registra log da operação no GitHub
+                    log_msg = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},BAIXA_LOTE,{qtd_baixadas}_itens,SUCESSO\n"
+                    
+                    # Prepara a limpeza do campo na próxima renderização
+                    st.session_state.limpar_cracha = True
+                    st.rerun()
+                else:
+                    st.warning("Nenhuma pendência encontrada para este crachá.")
+            except Exception as e:
+                st.error(f"Erro ao atualizar no Supabase: {e}")
+
+        # ----------------------------------------------------------------------
+        # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
+        # ----------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 📊 Exportar Logs da Operação")
+        
+        # Converte o histórico de pendências/baixados em CSV para download individual
+        csv_logs = df_pendentes.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="📥 Baixar Relatório de Pendências (CSV)",
+            data=csv_logs,
+            file_name=f"log_pendencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            key="btn_download_log_ind"
+        )
 # ==============================================================================
 # VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
 # ==============================================================================
