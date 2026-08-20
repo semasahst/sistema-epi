@@ -828,12 +828,12 @@ else:
 # ==============================================================================
 # VISÃO 6: DASHBOARD DE GESTÃO
 # ==============================================================================
-elif menu == "dashboard":
-    st.header("📊 Dashboard de Gestão do Programa de EPI")
+        elif menu == "dashboard":
+             st.header("📊 Dashboard de Gestão do Programa de EPI")
     
-    if df_base_completa.empty:
+        if df_base_completa.empty:
         st.info("Nenhum dado disponível para compor o Dashboard.")
-    else:
+ else:
         tot_registros = len(df_base_completa)
         tot_ass_pendentes = len(df_base_completa[df_base_completa["Assinatura"] == "Pendente"])
         tot_vencidos = len(df_base_completa[df_base_completa["Status"] == "VENCIDO"])
