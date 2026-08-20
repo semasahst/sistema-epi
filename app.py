@@ -802,34 +802,46 @@ else:
                 df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
 st.subheader("📄 Upload do Termo de Aceite NFC Assinado")
-re_termo = st.text_input("RE do Colaborador para o Termo:").strip()
-arquivo_termo = st.file_uploader("Selecione o Termo Digitalizado (PDF):", type=["pdf"])
+re_termo = st.text_input("RE do Colaborador para o Termo:", key="re_termo_upload").strip()
+arquivo_termo = st.file_uploader("Selecione o Termo Digitalizado (PDF):", type=["pdf"], key="file_termo_upload")
 
 if st.button("Salvar Termo de Aceite") and re_termo and arquivo_termo:
-    with st.spinner("Enviando termo para o repositório..."):
-        bytes_data = arquivo_termo.getvalue()
-        conteudo_b64 = base64.b64encode(bytes_data).decode('utf-8')
-        
-        caminho_github = f"termos_aceite/termo_{re_termo}.pdf"
-        url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{caminho_github}"
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-        
-        # Verifica se já existe para pegar o SHA (caso seja atualização)
-        req_get = requests.get(url_api, headers=headers)
-        sha = req_get.json().get('sha') if req_get.status_code == 200 else None
-        
-        payload = {
-            "message": f"Upload termo de aceite RE {re_termo}",
-            "content": conteudo_b64
-        }
-        if sha:
-            payload["sha"] = sha
-            
-        req_put = requests.put(url_api, headers=headers, json=payload)
-        if req_put.status_code in [200, 201]:
-            st.success(f"Termo do RE {re_termo} salvo com sucesso!")
-        else:
-            st.error("Falha ao salvar o termo no servidor.")
+    # Garante a leitura das credenciais dos Secrets do Streamlit caso não estejam no escopo
+    token_gh = st.secrets.get("GITHUB_TOKEN", GITHUB_TOKEN if "GITHUB_TOKEN" in locals() else "")
+    user_gh = st.secrets.get("GITHUB_USER", GITHUB_REPO.split('/')[0] if "GITHUB_REPO" in locals() else "")
+    repo_gh = st.secrets.get("GITHUB_REPO", GITHUB_REPO if "GITHUB_REPO" in locals() else "")
+
+    if not token_gh:
+        st.error("Erro de configuração: Token do GitHub não encontrado nos Secrets.")
+    else:
+        with st.spinner("Enviando termo para o repositório..."):
+            try:
+                bytes_data = arquivo_termo.getvalue()
+                conteudo_b64 = base64.b64encode(bytes_data).decode('utf-8')
+                
+                caminho_github = f"termos_aceite/termo_{re_termo}.pdf"
+                url_api = f"https://api.github.com/repos/{user_gh}/{repo_gh}/contents/{caminho_github}"
+                headers = {"Authorization": f"token {token_gh}"}
+                
+                # Verifica se o arquivo já existe para pegar o SHA (atualização)
+                req_get = requests.get(url_api, headers=headers)
+                sha = req_get.json().get('sha') if req_get.status_code == 200 else None
+                
+                payload = {
+                    "message": f"Upload termo de aceite RE {re_termo}",
+                    "content": conteudo_b64
+                }
+                if sha:
+                    payload["sha"] = sha
+                    
+                req_put = requests.put(url_api, headers=headers, json=payload)
+                if req_put.status_code in [200, 201]:
+                    st.success(f"Termo do RE {re_termo} salvo com sucesso no GitHub!")
+                    st.balloons()
+                else:
+                    st.error(f"Falha ao salvar no GitHub (Código {req_put.status_code}).")
+            except Exception as e:
+                st.error(f"Erro ao processar upload: {e}")
 # ==============================================================================
 # VISÃO: LOGS DE AUDITORIA
 # ==============================================================================
