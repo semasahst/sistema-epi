@@ -14,7 +14,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Configuração global da página do Streamlit
-st.set_page_config(page_title="Controle de EPIs - Semasa", layout="wide")
+st.set_page_config(page_title="Controle de EPIs - Semasa", page_icon="icone.png", layout="wide")
 
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 GITHUB_USER = "semasahst"
