@@ -533,19 +533,26 @@ elif menu == "gerar_ficha":
         # ----------------------------------------------------------------------
         # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
         # ----------------------------------------------------------------------
-        st.markdown("---")
-        st.markdown("### 📊 Exportar Logs da Operação")
-        
-        # Converte o histórico de pendências/baixados em CSV para download individual
-        csv_logs = df_pendentes.to_csv(index=False).encode('utf-8')
-        
-        st.download_button(
-            label="📥 Baixar Relatório de Pendências (CSV)",
-            data=csv_logs,
-            file_name=f"log_pendencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            key="btn_download_log_ind"
-        )
+        # ==============================================================================
+        # EXPORTAR LOGS DA OPERAÇÃO
+# ==============================================================================
+st.markdown("### 📊 Exportar Logs da Operação")
+
+# Valida qual DataFrame utilizar para os logs (ajuste o nome se necessário)
+df_exportar_logs = df_base_completa if 'df_base_completa' in locals() and not df_base_completa.empty else None
+
+if df_exportar_logs is not None and not df_exportar_logs.empty:
+    csv_logs = df_exportar_logs.to_csv(index=False).encode('utf-8')
+    
+    st.download_button(
+        label="📥 Baixar Logs em CSV",
+        data=csv_logs,
+        file_name=f"logs_operacao_epi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        key="btn_download_logs_operacao"
+    )
+else:
+    st.info("Nenhum registro de log disponível para exportação no momento.")
     
 # ==============================================================================
 # VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
