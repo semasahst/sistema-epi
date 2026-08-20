@@ -875,8 +875,6 @@ elif menu == "logs_auditoria":
             file_name=f"logs_auditoria_semasa_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
-    else:
-        st.warning("Nenhum registro de log encontrado até o momento.")
         # ----------------------------------------------------------------------
         # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
         # ----------------------------------------------------------------------
@@ -893,3 +891,6 @@ elif menu == "logs_auditoria":
             mime="text/csv",
             key="btn_download_log_ind"
         )
+    else:
+        st.warning("Nenhum registro de log encontrado até o momento.")
+      
