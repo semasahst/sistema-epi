@@ -400,22 +400,7 @@ elif menu == "coletar_ass":
             except Exception as e:
                 st.error(f"Erro ao atualizar no Supabase: {e}")
 
-        # ----------------------------------------------------------------------
-        # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
-        # ----------------------------------------------------------------------
-        st.markdown("---")
-        st.markdown("### 📊 Exportar Logs da Operação")
-        
-        # Converte o histórico de pendências/baixados em CSV para download individual
-        csv_logs = df_pendentes.to_csv(index=False).encode('utf-8')
-        
-        st.download_button(
-            label="📥 Baixar Relatório de Pendências (CSV)",
-            data=csv_logs,
-            file_name=f"log_pendencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            key="btn_download_log_ind"
-        )
+       
 # ==============================================================================
 # VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6)
 # ==============================================================================
@@ -485,6 +470,66 @@ elif menu == "gerar_ficha":
                                 )
                             else:
                                 st.info("⚠️ Sem Termo de Aceite NFC cadastrado.")
+                        # ------------------------------------------------------
+                        # UPLOAD DO TERMO DE ACEITE (Dentro da visão correta)
+                        # ------------------------------------------------------
+                        st.markdown("---")
+                        st.subheader("📄 Upload do Termo de Aceite NFC Assinado")
+                        
+                        # Inicializa as chaves no session_state para permitir o reset dos campos
+                        if "key_re_termo" not in st.session_state:
+                            st.session_state.key_re_termo = ""
+                        if "uploader_key" not in st.session_state:
+                            st.session_state.uploader_key = 0
+
+                        re_termo = st.text_input(
+                            "RE do Colaborador para o Termo:", 
+                            value=st.session_state.key_re_termo,
+                            key="re_termo_input"
+                        ).strip()
+                        
+                        arquivo_termo = st.file_uploader(
+                            "Selecione o Termo Digitalizado (PDF):", 
+                            type=["pdf"], 
+                            key=f"file_termo_{st.session_state.uploader_key}"
+                        )
+
+                        if st.button("Salvar Termo de Aceite", key="btn_salvar_termo") and re_termo and arquivo_termo:
+                            token_gh = st.secrets.get("GITHUB_TOKEN", GITHUB_TOKEN if "GITHUB_TOKEN" in globals() else "")
+                            user_gh = st.secrets.get("GITHUB_USER", GITHUB_USER if "GITHUB_USER" in globals() else "semasahst")
+                            repo_gh = st.secrets.get("GITHUB_REPO", GITHUB_REPO if "GITHUB_REPO" in globals() else "sistema-epi")
+
+                            with st.spinner("Enviando termo para o repositório..."):
+                                try:
+                                    bytes_data = arquivo_termo.getvalue()
+                                    conteudo_b64 = base64.b64encode(bytes_data).decode('utf-8')
+                                    
+                                    caminho_github = f"termos_aceite/termo_{re_termo}.pdf"
+                                    url_api = f"https://api.github.com/repos/{user_gh}/{repo_gh}/contents/{caminho_github}"
+                                    headers = {"Authorization": f"token {token_gh}"}
+                                    
+                                    req_get = requests.get(url_api, headers=headers)
+                                    sha = req_get.json().get('sha') if req_get.status_code == 200 else None
+                                    
+                                    payload = {
+                                        "message": f"Upload termo de aceite RE {re_termo}",
+                                        "content": conteudo_b64
+                                    }
+                                    if sha:
+                                        payload["sha"] = sha
+                                        
+                                    req_put = requests.put(url_api, headers=headers, json=payload)
+                                    if req_put.status_code in [200, 201]:
+                                        st.success(f"Termo do RE {re_termo} salvo com sucesso!")
+                                        
+                                        # Reseta os campos alterando as chaves do estado e recarregando a tela
+                                        st.session_state.key_re_termo = ""
+                                        st.session_state.uploader_key += 1
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Erro na API do GitHub (Status {req_put.status_code}).")
+                                except Exception as e:
+                                    st.error(f"Falha ao processar arquivo: {e}")
     
 # ==============================================================================
 # VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
@@ -808,52 +853,7 @@ else:
                 df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
-st.subheader("📄 Upload do Termo de Aceite NFC Assinado")
-re_termo = st.text_input("RE do Colaborador para o Termo:", key="re_termo_upload").strip()
-arquivo_termo = st.file_uploader("Selecione o Termo Digitalizado (PDF):", type=["pdf"], key="file_termo_upload")
 
-if st.button("Salvar Termo de Aceite") and re_termo and arquivo_termo:
-    # Tenta resgatar o token de várias formas possíveis para evitar erro
-    token_gh = (
-        st.secrets.get("GITHUB_TOKEN") 
-        or st.secrets.get("TOKEN_GITHUB") 
-        or st.secrets.get("GITHUB_PAT")
-        or (GITHUB_TOKEN if "GITHUB_TOKEN" in globals() else "")
-    )
-    user_gh = st.secrets.get("GITHUB_USER", GITHUB_USER if "GITHUB_USER" in globals() else "semasahst")
-    repo_gh = st.secrets.get("GITHUB_REPO", GITHUB_REPO if "GITHUB_REPO" in globals() else "sistema-epi")
-
-    if not token_gh:
-        st.error("Erro de configuração: Adicione 'GITHUB_TOKEN' na aba Settings > Secrets do Streamlit Cloud.")
-    else:
-        with st.spinner("Enviando termo para o repositório..."):
-            try:
-                bytes_data = arquivo_termo.getvalue()
-                conteudo_b64 = base64.b64encode(bytes_data).decode('utf-8')
-                
-                caminho_github = f"termos_aceite/termo_{re_termo}.pdf"
-                url_api = f"https://api.github.com/repos/{user_gh}/{repo_gh}/contents/{caminho_github}"
-                headers = {"Authorization": f"token {token_gh}"}
-                
-                # Checa se o arquivo já existe no repositório para obter o SHA
-                req_get = requests.get(url_api, headers=headers)
-                sha = req_get.json().get('sha') if req_get.status_code == 200 else None
-                
-                payload = {
-                    "message": f"Upload termo de aceite RE {re_termo}",
-                    "content": conteudo_b64
-                }
-                if sha:
-                    payload["sha"] = sha
-                    
-                req_put = requests.put(url_api, headers=headers, json=payload)
-                if req_put.status_code in [200, 201]:
-                    st.success(f"Termo do RE {re_termo} salvo com sucesso!")
-                    st.balloons()
-                else:
-                    st.error(f"Erro na API do GitHub (Status {req_put.status_code}). Verifique se a pasta 'termos_aceite' existe ou se as permissões do Token estão ativas.")
-            except Exception as e:
-                st.error(f"Falha ao processar arquivo: {e}")
 # ==============================================================================
 # VISÃO: LOGS DE AUDITORIA
 # ==============================================================================
@@ -877,3 +877,19 @@ elif menu == "logs_auditoria":
         )
     else:
         st.warning("Nenhum registro de log encontrado até o momento.")
+        # ----------------------------------------------------------------------
+        # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
+        # ----------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 📊 Exportar Logs da Operação")
+        
+        # Converte o histórico de pendências/baixados em CSV para download individual
+        csv_logs = df_pendentes.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="📥 Baixar Relatório de Pendências (CSV)",
+            data=csv_logs,
+            file_name=f"log_pendencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            key="btn_download_log_ind"
+        )
