@@ -456,7 +456,20 @@ elif menu == "gerar_ficha":
                             file_name=f"Ficha_EPI_{re_exportar}_{nome_oficial.replace(' ', '_')}.pdf",
                             mime="application/pdf"
                         )
+# Botão de download do Termo anexado
+url_termo = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/termos_aceite/termo_{re_busca}.pdf"
+req_termo = requests.get(url_termo, headers={"Authorization": f"token {GITHUB_TOKEN}"})
 
+if req_termo.status_code == 200:
+    pdf_bytes = base64.b64decode(req_termo.json()['content'])
+    st.download_button(
+        label="📥 Baixar Termo de Aceite NFC (PDF)",
+        data=pdf_bytes,
+        file_name=f"Termo_Aceite_NFC_{re_busca}.pdf",
+        mime="application/pdf"
+    )
+else:
+    st.info("⚠️ Este colaborador ainda não possui Termo de Aceite NFC cadastrado.")
 # ==============================================================================
 # VISÃO 4: CENTRAL DE DISPAROS DE E-MAILS (HST)
 # ==============================================================================
@@ -779,3 +792,59 @@ else:
                 df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
                 df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
                 st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
+st.subheader("📄 Upload do Termo de Aceite NFC Assinado")
+re_termo = st.text_input("RE do Colaborador para o Termo:").strip()
+arquivo_termo = st.file_uploader("Selecione o Termo Digitalizado (PDF):", type=["pdf"])
+
+if st.button("Salvar Termo de Aceite") and re_termo and arquivo_termo:
+    with st.spinner("Enviando termo para o repositório..."):
+        bytes_data = arquivo_termo.getvalue()
+        conteudo_b64 = base64.b64encode(bytes_data).decode('utf-8')
+        
+        caminho_github = f"termos_aceite/termo_{re_termo}.pdf"
+        url_api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{caminho_github}"
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        
+        # Verifica se já existe para pegar o SHA (caso seja atualização)
+        req_get = requests.get(url_api, headers=headers)
+        sha = req_get.json().get('sha') if req_get.status_code == 200 else None
+        
+        payload = {
+            "message": f"Upload termo de aceite RE {re_termo}",
+            "content": conteudo_b64
+        }
+        if sha:
+            payload["sha"] = sha
+            
+        req_put = requests.put(url_api, headers=headers, json=payload)
+        if req_put.status_code in [200, 201]:
+            st.success(f"Termo do RE {re_termo} salvo com sucesso!")
+        else:
+            st.error("Falha ao salvar o termo no servidor.")
+# Função para registrar log de auditoria
+def registrar_log_auditoria(re_colaborador, cracha_hex, qtd_itens):
+    data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ip_usuario = st.context.headers.get("X-Forwarded-For", "Localhost")
+    
+    novo_log = f'"{data_hora}","{re_colaborador}","{cracha_hex}","{qtd_itens}","{ip_usuario}"\n'
+    # Adicionar este log ao arquivo logs_auditoria.csv no GitHub via API
+    if menu == "logs_auditoria":
+    st.header("🛡️ Logs de Auditoria e Segurança do Servidor")
+    st.markdown("Histórico imutável de todas as assinaturas NFC e operações realizadas.")
+    
+    url_logs = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/logs_auditoria.csv"
+    req_logs = requests.get(url_logs, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+    
+    if req_logs.status_code == 200:
+        conteudo_logs = base64.b64decode(req_logs.json()['content']).decode('utf-8')
+        df_logs = pd.read_csv(io.StringIO(conteudo_logs))
+        st.dataframe(df_logs, use_container_width=True)
+        
+        st.download_button(
+            label="📊 Exportar Relatório de Logs (CSV)",
+            data=conteudo_logs,
+            file_name=f"logs_auditoria_semasa_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+    else:
+        st.warning("Nenhum registro de log encontrado até o momento.")
