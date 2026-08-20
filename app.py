@@ -828,12 +828,12 @@ else:
 # ==============================================================================
 # VISÃO 6: DASHBOARD DE GESTÃO
 # ==============================================================================
-        elif menu == "dashboard":
-             st.header("📊 Dashboard de Gestão do Programa de EPI")
+elif menu == "dashboard":
+    st.header("📊 Dashboard de Gestão do Programa de EPI")
     
-             if df_base_completa.empty:
-             st.info("Nenhum dado disponível para compor o Dashboard.")
- else:
+    if df_base_completa.empty:
+        st.info("Nenhum dado disponível para compor o Dashboard.")
+    else:
         tot_registros = len(df_base_completa)
         tot_ass_pendentes = len(df_base_completa[df_base_completa["Assinatura"] == "Pendente"])
         tot_vencidos = len(df_base_completa[df_base_completa["Status"] == "VENCIDO"])
@@ -849,13 +849,12 @@ else:
         col_db1, col_db2 = st.columns(2)
         
         with col_db1:
-            st.markdown("#### Distribution por Status de Validade")
+            st.markdown("#### Distribuição por Status de Validade")
             st.bar_chart(df_base_completa["Status"].value_counts())
             
         with col_db2:
             st.markdown("#### Entregas por Departamento")
             st.bar_chart(df_base_completa["Departamento"].value_counts())
-
 # ==============================================================================
 # VISÃO 7: EPIS VENCIDOS / A VENCER
 # ==============================================================================
