@@ -533,11 +533,12 @@ elif menu == "gerar_ficha":
         # ----------------------------------------------------------------------
         # DOWNLOAD DOS LOGS INDIVIDUAIS / GERADO
         # ----------------------------------------------------------------------
-        # ==============================================================================
-        # EXPORTAR LOGS DA OPERAÇÃO
+      # ==============================================================================
+# EXPORTAR LOGS DA OPERAÇÃO
 # ==============================================================================
 st.markdown("### 📊 Exportar Logs da Operação")
-# Valida qual DataFrame utilizar para os logs (ajuste o nome se necessário)
+
+# Valida qual DataFrame utilizar para os logs
 df_exportar_logs = df_base_completa if 'df_base_completa' in locals() and not df_base_completa.empty else None
 
 if df_exportar_logs is not None and not df_exportar_logs.empty:
