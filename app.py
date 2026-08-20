@@ -674,40 +674,156 @@ elif menu == "disparador_alertas":
                     st.markdown(f'<a href="{link_mailto_gestor}" target="_blank" style="padding:8px 16px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:14px; font-weight:bold;">✉️ Enviar Relatório ao Gestor do Setor</a>', unsafe_allow_html=True)
 
 # ==============================================================================
-# VISÃO 5: EXPORTAÇÃO PARA AUDITORIA (NOVA VISÃO)
+# VISÃO 5: EXPORTAÇÃO PARA AUDITORIA E MTE
 # ==============================================================================
 elif menu == "auditoria":
-    st.header("📋 Exportação e Relatórios Consolidados de Auditoria")
-    st.markdown("Exporte relatórios em lote completos e estruturados para fiscalizações do Trabalho e auditorias internas.")
+    st.header("🗄️ Relatório Geral para Auditoria e Fiscalização")
+    st.markdown("Exporte o histórico completo e bruto de transações do banco de dados. Este relatório extrai os **metadados nativos do servidor** (carimbo de tempo inviolável), servindo como comprovação legal da data e hora exata em que as transações ocorreram no sistema.")
     
-    if df_base_completa.empty:
-        st.warning("Sem dados cadastrados na base do Supabase.")
-    else:
-        st.markdown("### 📊 Base Geral de Entregas e Vencimentos")
-        st.dataframe(df_base_completa, use_container_width=True)
-        
-        col_exp1, col_exp2 = st.columns(2)
-        
-        with col_exp1:
-            csv_audit_completo = df_base_completa.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Baixar Base Geral Completa (CSV)",
-                data=csv_audit_completo,
-                file_name=f"auditoria_geral_epi_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                key="btn_audit_geral"
-            )
+    with st.spinner("Extraindo logs do banco de dados..."):
+        try:
+            # Puxa a base bruta direto do Supabase
+            resposta_audit = supabase.table("entregas_epi").select("*").execute()
+            df_audit = pd.DataFrame(resposta_audit.data)
             
-        with col_exp2:
-            df_somente_vencidos = df_base_completa[df_base_completa["Status"] == "VENCIDO"]
-            csv_audit_vencidos = df_somente_vencidos.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Baixar Apenas Itens Vencidos (CSV)",
-                data=csv_audit_vencidos,
-                file_name=f"relatorio_vencidos_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                key="btn_audit_venc"
-            )
+            if df_audit.empty:
+                st.info("Nenhum registro localizado no banco de dados.")
+            else:
+                # 1. Padroniza todos os nomes de colunas do Supabase para minúsculo e sem espaços extras
+                df_audit.columns = [str(c).lower().strip() for c in df_audit.columns]
+                
+                # 2. Trava defensiva: garante que todas as colunas esperadas existam para evitar KeyError
+                colunas_obrigatorias = {
+                    "id": "N/A",
+                    "created_at": "Não registrado",
+                    "re": "N/A",
+                    "nome_funcionario": "N/A",
+                    "epi": "N/A",
+                    "data_entrega": "N/A"
+                }
+                
+                for col_nome, val_padrao in colunas_obrigatorias.items():
+                    if col_nome not in df_audit.columns:
+                        df_audit[col_nome] = val_padrao
+
+                # 3. Renomeia as colunas para exibição e relatório no Excel (sem acentos nos títulos para evitar erros)
+                df_audit = df_audit.rename(columns={
+                    "id": "ID Transacao",
+                    "created_at": "Carimbo de Tempo (Prova Inviolavel)",
+                    "re": "RE Colaborador",
+                    "nome_funcionario": "Nome do Colaborador",
+                    "epi": "EPI Entregue",
+                    "data_entrega": "Data de Referencia da Baixa/Assinatura"
+                })
+                
+                # 4. Reorganiza a ordem exata das colunas de forma segura
+                colunas_ordenadas = [
+                    "ID Transacao", 
+                    "Carimbo de Tempo (Prova Inviolavel)", 
+                    "RE Colaborador", 
+                    "Nome do Colaborador", 
+                    "EPI Entregue", 
+                    "Data de Referencia da Baixa/Assinatura"
+                ]
+                
+                df_audit = df_audit[colunas_ordenadas]
+                
+                st.success(f"Extração concluída com sucesso: {len(df_audit)} registros consolidados.")
+                
+                # Exibe a prévia da tabela na tela do app
+                st.dataframe(df_audit, use_container_width=True)
+                
+                # Prepara o arquivo CSV formatado para abrir direto no Excel sem desconfigurar
+                csv_audit = df_audit.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                
+                st.markdown("---")
+                st.markdown("### 📥 Download do Arquivo Legal")
+                
+                st.download_button(
+                    label="Baixar Log Completo de Auditoria (Abrir no Excel)",
+                    data=csv_audit,
+                    file_name=f"Auditoria_HST_SEMASA_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
+                
+        except Exception as e:
+            st.error(f"Falha técnica ao acessar os logs do servidor: {e}")
+else:
+    if df_base_completa.empty:
+        st.warning("Aguardando a sincronização dos dados...")
+    else:
+        df_alertas_filtrado = df_base_completa.sort_values(by="Data Entrega", ascending=True)
+        df_alertas_filtrado = df_alertas_filtrado.drop_duplicates(subset=["Funcionário", "EPI"], keep="last")
+
+        if not df_func.empty and len(df_func.columns) > 3:
+            mapa_cargos = {str(row.iloc[1]).replace('?', '').strip().upper(): str(row.iloc[3]).replace('?', '').strip() for _, row in df_func.iterrows()}
+            df_alertas_filtrado['Cargo'] = df_alertas_filtrado['Funcionário'].str.strip().str.upper().map(mapa_cargos).fillna("Não Informado")
+        else:
+            df_alertas_filtrado['Cargo'] = "Não Informado"
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Filtros do Painel")
+        
+        lista_deptos = sorted(df_alertas_filtrado['Departamento'].dropna().unique().tolist())
+        deptos_selecionados = st.sidebar.multiselect("Filtrar por Departamento:", options=lista_deptos, default=lista_deptos)
+        
+        lista_cargos = sorted(df_alertas_filtrado['Cargo'].dropna().unique().tolist())
+        cargos_selecionados = st.sidebar.multiselect("Filtrar por Cargo:", options=lista_cargos, default=lista_cargos)
+        
+        lista_status = sorted(df_alertas_filtrado['Status'].dropna().unique().tolist())
+        status_selecionados = st.sidebar.multiselect("Filtrar por Status:", options=lista_status, default=lista_status)
+        
+        df_painel_filtrado = df_alertas_filtrado[
+            (df_alertas_filtrado['Departamento'].isin(deptos_selecionados)) & 
+            (df_alertas_filtrado['Cargo'].isin(cargos_selecionados)) & 
+            (df_alertas_filtrado['Status'].isin(status_selecionados))
+        ]
+
+        if menu == "dashboard":
+            st.header("📊 Painel de Indicadores Estratégicos")
+            st.markdown("Indicadores de distribuição física e conformidade legal de fácil entendimento.")
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("EPIs Ativos Monitorados", len(df_painel_filtrado))
+            c2.metric("Itens Regulares", len(df_painel_filtrado[df_painel_filtrado['Status'] == "Regular"]))
+            c3.metric("Alertas Críticos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "CRITICO (Ate 15 dias)"]))
+            c4.metric("Total Vencidos", len(df_painel_filtrado[df_painel_filtrado['Status'] == "VENCIDO"]))
+            
+            st.markdown("---")
+            
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                st.markdown("#### Situação Geral de Validade")
+                if not df_painel_filtrado.empty:
+                    df_status_grafico = df_painel_filtrado.groupby('Status').size().reset_index(name='Quantidade')
+                    st.bar_chart(data=df_status_grafico, x='Status', y='Quantidade')
+            with col_g2:
+                st.markdown("#### Modelos de EPIs Mais Entregues")
+                if not df_painel_filtrado.empty:
+                    df_epi_grafico = df_painel_filtrado.groupby('EPI').size().reset_index(name='Quantidade').sort_values(by='Quantidade', ascending=False)
+                    st.bar_chart(data=df_epi_grafico, x='EPI', y='Quantidade')
+            
+            st.markdown("---")
+            col_g3, col_g4 = st.columns(2)
+            with col_g3:
+                st.markdown("#### Volume de EPIs por Departamento")
+                if not df_painel_filtrado.empty:
+                    df_depto_grafico = df_painel_filtrado.groupby('Departamento').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
+                    st.bar_chart(data=df_depto_grafico, x='Departamento', y='Quantidade de EPIs')
+            with col_g4:
+                st.markdown("#### Volume de EPIs por Cargo")
+                if not df_painel_filtrado.empty:
+                    df_cargo_grafico = df_painel_filtrado.groupby('Cargo').size().reset_index(name='Quantidade de EPIs').sort_values(by='Quantidade de EPIs', ascending=False)
+                    st.bar_chart(data=df_cargo_grafico, x='Cargo', y='Quantidade de EPIs')
+
+        elif menu == "vencidos":
+            st.header("⚠️ Gestão de Alertas e Pendências Logísticas")
+            st.markdown("Lista completa detalhando os prazos de validade regulamentares dos EPIs ativos.")
+            if not df_painel_filtrado.empty:
+                df_venc_exibir = df_painel_filtrado.copy()
+                df_venc_exibir["Data Entrega"] = df_venc_exibir["Data Entrega"].dt.strftime("%d/%m/%Y")
+                df_venc_exibir["Data Vencimento"] = df_venc_exibir["Data Vencimento"].dt.strftime("%d/%m/%Y")
+                st.dataframe(df_venc_exibir[["RE", "Funcionário", "Departamento", "EPI", "Data Entrega", "Data Vencimento", "Dias Restantes", "Status"]], use_container_width=True)
 
 # ==============================================================================
 # VISÃO 6: DASHBOARD DE GESTÃO
