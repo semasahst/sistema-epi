@@ -268,31 +268,48 @@ if menu == "lancar_epi":
         with col_f1:
             re_digitado = st.text_input("Digite o número do RE:", key="re_usuario").strip()
         with col_f2:
-            nome_funcionario = mapa_re_nome.get(re_digitado, "")
-            if re_digitado and not nome_funcionario: 
-                st.error("RE não localizado.")
-            elif re_digitado and nome_funcionario: 
-                st.info(f"👤 Colaborador: {nome_funcionario}")
+            # ====== NOVA LÓGICA: IDENTIFICAÇÃO DE EMPRÉSTIMO ======
+            if re_digitado == "0000":
+                nome_funcionario = "Empréstimo (Outras Unidades)"
+                st.info(f"🏢 Destino: {nome_funcionario}")
+            else:
+                nome_funcionario = mapa_re_nome.get(re_digitado, "")
+                if re_digitado and not nome_funcionario: 
+                    st.error("RE não localizado.")
+                elif re_digitado and nome_funcionario: 
+                    st.info(f"👤 Colaborador: {nome_funcionario}")
                 
         st.markdown("---")
         st.markdown("#### 🔒 Autenticação e Validação")
         
-        bypass_nfc = st.checkbox("Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
-        
         situacao_assinatura = "PENDENTE"
+        justificativa_emprestimo = ""
         
-        if not bypass_nfc:
-            nfc_input = st.text_input("CLIQUE AQUI e aproxime o Crachá do Leitor NFC para assinar:", type="password").strip()
-            if nfc_input and re_digitado:
-                cracha_esperado = mapa_re_cracha.get(re_digitado, "")
-                if nfc_input == cracha_esperado:
-                    situacao_assinatura = "Assinado"
-                    st.success("Crachá validado com sucesso!")
-                else:
-                    dono_desse_cracha = mapa_cracha_nome.get(nfc_input, "Desconhecido")
-                    st.error(f"Este crachá pertence a '{dono_desse_cracha}'! Registro ficará PENDENTE.")
+        # ====== NOVA LÓGICA: CRACHÁ vs AUTORIZAÇÃO MANUAL ======
+        if re_digitado == "0000":
+            st.warning("⚠️ MODO DE EMPRÉSTIMO ATIVADO")
+            justificativa_emprestimo = st.text_input("Justificativa e Autorização do Empréstimo (Ex: Autorizado por Diretor João):").strip()
+            
+            if justificativa_emprestimo:
+                situacao_assinatura = "Assinado"
+                st.success("Empréstimo autorizado e justificado!")
+            else:
+                st.error("Preencha quem autorizou o empréstimo para liberar a entrega.")
         else:
-            st.info("Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
+            bypass_nfc = st.checkbox("Liberar sem a presença do trabalhador (Gerar Assinatura Pendente)")
+            
+            if not bypass_nfc:
+                nfc_input = st.text_input("CLIQUE AQUI e aproxime o Crachá do Leitor NFC para assinar:", type="password").strip()
+                if nfc_input and re_digitado:
+                    cracha_esperado = mapa_re_cracha.get(re_digitado, "")
+                    if nfc_input == cracha_esperado:
+                        situacao_assinatura = "Assinado"
+                        st.success("Crachá validado com sucesso!")
+                    else:
+                        dono_desse_cracha = mapa_cracha_nome.get(nfc_input, "Desconhecido")
+                        st.error(f"Este crachá pertence a '{dono_desse_cracha}'! Registro ficará PENDENTE.")
+            else:
+                st.info("Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
             
         st.markdown("---")
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
@@ -305,7 +322,6 @@ if menu == "lancar_epi":
         if epis_selecionados:
             st.markdown("##### 🔢 Análise de Validade, Quantidade e Justificativas:")
             
-            # Buscar histórico apenas deste RE específico
             df_hist_re = pd.DataFrame()
             if re_digitado and not df_base_completa.empty:
                 df_hist_re = df_base_completa[df_base_completa["RE"] == str(re_digitado)]
@@ -315,46 +331,48 @@ if menu == "lancar_epi":
             for epi_item in epis_selecionados:
                 st.markdown("<hr style='margin: 10px 0; border-color: #555;'>", unsafe_allow_html=True)
                 
-                # Descobrir o status atual do EPI para esse RE
                 status_atual = "NUNCA ENTREGUE"
                 if not df_hist_re.empty:
                     df_epi = df_hist_re[df_hist_re["EPI"] == epi_item]
                     if not df_epi.empty:
                         status_atual = df_epi.iloc[0]["Status"]
                 
-                # =======================================================
-                # LÓGICA DE CORES E EXIGÊNCIA DE JUSTIFICATIVA
-                # =======================================================
-                if status_atual in ["VENCIDO", "CRITICO (Ate 15 dias)", "NUNCA ENTREGUE"]:
-                    # LIBERADO (VERDE)
-                    st.markdown(f"**EPI:** <span style='color:#4CAF50; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status Histórico: **{status_atual}** ✅ *(Substituição Liberada)*", unsafe_allow_html=True)
-                    
+                # ====== NOVA LÓGICA DE CORES (BYPASS PARA EMPRÉSTIMO) ======
+                if re_digitado == "0000":
+                    # Sempre libera (verde) se for empréstimo, não valida histórico
+                    st.markdown(f"**EPI:** <span style='color:#4CAF50; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status: **EMPRÉSTIMO** ✅", unsafe_allow_html=True)
                     qtd_val = st.number_input(f"Quantidade ({epi_item}):", min_value=1, max_value=50, value=1, step=1, key=f"qtd_{epi_item}")
                     quantidades_epis[epi_item] = qtd_val
-                    justificativas_epis[epi_item] = "" # Vazio, pois está dentro do fluxo legal
-                
+                    justificativas_epis[epi_item] = justificativa_emprestimo
                 else:
-                    # BLOQUEADO/NO PRAZO (VERMELHO)
-                    st.markdown(f"**EPI:** <span style='color:#F44336; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status Histórico: **{status_atual}** ❌ *(Ainda no prazo de validade)*", unsafe_allow_html=True)
-                    
-                    col_q, col_j = st.columns([1, 2])
-                    with col_q:
+                    if status_atual in ["VENCIDO", "CRITICO (Ate 15 dias)", "NUNCA ENTREGUE"]:
+                        st.markdown(f"**EPI:** <span style='color:#4CAF50; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status Histórico: **{status_atual}** ✅ *(Substituição Liberada)*", unsafe_allow_html=True)
+                        
                         qtd_val = st.number_input(f"Quantidade ({epi_item}):", min_value=1, max_value=50, value=1, step=1, key=f"qtd_{epi_item}")
                         quantidades_epis[epi_item] = qtd_val
+                        justificativas_epis[epi_item] = "" 
                     
-                    with col_j:
-                        tem_justificativa = st.checkbox(f"Solicitar troca antecipada?", key=f"check_{epi_item}")
+                    else:
+                        st.markdown(f"**EPI:** <span style='color:#F44336; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status Histórico: **{status_atual}** ❌ *(Ainda no prazo de validade)*", unsafe_allow_html=True)
                         
-                        if tem_justificativa:
-                            just = st.text_input("Qual o motivo da troca? (Ex: Extraviado, Rasgado, etc)", key=f"just_{epi_item}").strip()
-                            if just == "":
-                                st.error("⚠️ Digite a justificativa para liberar o botão de gravar.")
-                                bloquear_salvamento = True
+                        col_q, col_j = st.columns([1, 2])
+                        with col_q:
+                            qtd_val = st.number_input(f"Quantidade ({epi_item}):", min_value=1, max_value=50, value=1, step=1, key=f"qtd_{epi_item}")
+                            quantidades_epis[epi_item] = qtd_val
+                        
+                        with col_j:
+                            tem_justificativa = st.checkbox(f"Solicitar troca antecipada?", key=f"check_{epi_item}")
+                            
+                            if tem_justificativa:
+                                just = st.text_input("Qual o motivo da troca? (Ex: Extraviado, Rasgado, etc)", key=f"just_{epi_item}").strip()
+                                if just == "":
+                                    st.error("⚠️ Digite a justificativa para liberar o botão de gravar.")
+                                    bloquear_salvamento = True
+                                else:
+                                    justificativas_epis[epi_item] = just
                             else:
-                                justificativas_epis[epi_item] = just
-                        else:
-                            st.warning("⚠️ Marque a caixa acima e justifique para autorizar a entrega deste item.")
-                            bloquear_salvamento = True
+                                st.warning("⚠️ Marque a caixa acima e justifique para autorizar a entrega deste item.")
+                                bloquear_salvamento = True
 
         data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
             
@@ -362,7 +380,9 @@ if menu == "lancar_epi":
         botao_salvar = st.button("💾 Gravar Lançamentos no Sistema")
         
         if botao_salvar:
-            if bloquear_salvamento:
+            if re_digitado == "0000" and not justificativa_emprestimo:
+                st.error("🛑 Para registrar um empréstimo, preencha o campo de 'Justificativa e Autorização' acima antes de salvar.")
+            elif bloquear_salvamento:
                 st.error("🛑 Existem EPIs selecionados que ainda estão no prazo de validade. Você precisa justificar a troca antecipada antes de conseguir salvar.")
             elif not re_digitado or not nome_funcionario:
                 st.error("Digite um RE válido antes de salvar.")
@@ -371,13 +391,18 @@ if menu == "lancar_epi":
             else:
                 lote_linhas = []
                 for epi in epis_selecionados:
+                    
+                    texto_justificativa = justificativas_epis.get(epi, "")
+                    if re_digitado == "0000":
+                        texto_justificativa = f"EMPRÉSTIMO AUTORIZADO: {justificativa_emprestimo}"
+
                     lote_linhas.append({
                         "re": str(re_digitado),
                         "nome_funcionario": str(nome_funcionario),
                         "epi": str(epi),
                         "qtd": int(quantidades_epis.get(epi, 1)), 
                         "data_entrega": "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d"),
-                        "justificativa": justificativas_epis.get(epi, "") # Grava a justificativa (ou envia vazio se for legal)
+                        "justificativa": texto_justificativa 
                     })
                 
                 with st.spinner("Salvando lote no Supabase..."):
@@ -386,7 +411,7 @@ if menu == "lancar_epi":
                         st.success(f"Gravado com sucesso para {nome_funcionario}!")
                         st.balloons()
                     except Exception as e:
-                        st.error(f"Erro ao salvar no Supabase. Lembre-se de criar a coluna 'justificativa' no banco de dados! Detalhes: {e}")
+                        st.error(f"Erro ao salvar no Supabase. Detalhes: {e}")
 # ==============================================================================
 # VISÃO 2: COLETAR ASSINATURAS PENDENTES
 # ==============================================================================
