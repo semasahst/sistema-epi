@@ -297,23 +297,64 @@ if menu == "lancar_epi":
         st.markdown("---")
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
         
+        # Dicionários e travas para o salvamento
         quantidades_epis = {}
+        justificativas_epis = {}
+        bloquear_salvamento = False 
+        
         if epis_selecionados:
-            st.markdown("##### 🔢 Defina a Quantidade de cada EPI:")
-            cols_qtd = st.columns(min(len(epis_selecionados), 3))
+            st.markdown("##### 🔢 Análise de Validade, Quantidade e Justificativas:")
             
-            for index, epi_item in enumerate(epis_selecionados):
-                col_atual = cols_qtd[index % 3]
-                with col_atual:
-                    qtd_val = st.number_input(
-                        f"Qtd: {epi_item}", 
-                        min_value=1, 
-                        max_value=50, 
-                        value=1, 
-                        step=1, 
-                        key=f"qtd_{epi_item}"
-                    )
+            # Buscar histórico apenas deste RE específico
+            df_hist_re = pd.DataFrame()
+            if re_digitado and not df_base_completa.empty:
+                df_hist_re = df_base_completa[df_base_completa["RE"] == str(re_digitado)]
+                if not df_hist_re.empty:
+                    df_hist_re = df_hist_re.sort_values(by="Data Entrega Declarada", ascending=False)
+            
+            for epi_item in epis_selecionados:
+                st.markdown("<hr style='margin: 10px 0; border-color: #555;'>", unsafe_allow_html=True)
+                
+                # Descobrir o status atual do EPI para esse RE
+                status_atual = "NUNCA ENTREGUE"
+                if not df_hist_re.empty:
+                    df_epi = df_hist_re[df_hist_re["EPI"] == epi_item]
+                    if not df_epi.empty:
+                        status_atual = df_epi.iloc[0]["Status"]
+                
+                # =======================================================
+                # LÓGICA DE CORES E EXIGÊNCIA DE JUSTIFICATIVA
+                # =======================================================
+                if status_atual in ["VENCIDO", "CRITICO (Ate 15 dias)", "NUNCA ENTREGUE"]:
+                    # LIBERADO (VERDE)
+                    st.markdown(f"**EPI:** <span style='color:#4CAF50; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status Histórico: **{status_atual}** ✅ *(Substituição Liberada)*", unsafe_allow_html=True)
+                    
+                    qtd_val = st.number_input(f"Quantidade ({epi_item}):", min_value=1, max_value=50, value=1, step=1, key=f"qtd_{epi_item}")
                     quantidades_epis[epi_item] = qtd_val
+                    justificativas_epis[epi_item] = "" # Vazio, pois está dentro do fluxo legal
+                
+                else:
+                    # BLOQUEADO/NO PRAZO (VERMELHO)
+                    st.markdown(f"**EPI:** <span style='color:#F44336; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status Histórico: **{status_atual}** ❌ *(Ainda no prazo de validade)*", unsafe_allow_html=True)
+                    
+                    col_q, col_j = st.columns([1, 2])
+                    with col_q:
+                        qtd_val = st.number_input(f"Quantidade ({epi_item}):", min_value=1, max_value=50, value=1, step=1, key=f"qtd_{epi_item}")
+                        quantidades_epis[epi_item] = qtd_val
+                    
+                    with col_j:
+                        tem_justificativa = st.checkbox(f"Solicitar troca antecipada?", key=f"check_{epi_item}")
+                        
+                        if tem_justificativa:
+                            just = st.text_input("Qual o motivo da troca? (Ex: Extraviado, Rasgado, etc)", key=f"just_{epi_item}").strip()
+                            if just == "":
+                                st.error("⚠️ Digite a justificativa para liberar o botão de gravar.")
+                                bloquear_salvamento = True
+                            else:
+                                justificativas_epis[epi_item] = just
+                        else:
+                            st.warning("⚠️ Marque a caixa acima e justifique para autorizar a entrega deste item.")
+                            bloquear_salvamento = True
 
         data_entrega_sel = st.date_input("Data da Entrega:", value=datetime.now().date(), key="data_usuario")
             
@@ -321,7 +362,9 @@ if menu == "lancar_epi":
         botao_salvar = st.button("💾 Gravar Lançamentos no Sistema")
         
         if botao_salvar:
-            if not re_digitado or not nome_funcionario:
+            if bloquear_salvamento:
+                st.error("🛑 Existem EPIs selecionados que ainda estão no prazo de validade. Você precisa justificar a troca antecipada antes de conseguir salvar.")
+            elif not re_digitado or not nome_funcionario:
                 st.error("Digite um RE válido antes de salvar.")
             elif not epis_selecionados:
                 st.error("Selecione ao menos um EPI.")
@@ -333,7 +376,8 @@ if menu == "lancar_epi":
                         "nome_funcionario": str(nome_funcionario),
                         "epi": str(epi),
                         "qtd": int(quantidades_epis.get(epi, 1)), 
-                        "data_entrega": "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d")
+                        "data_entrega": "PENDENTE" if situacao_assinatura == "PENDENTE" else data_entrega_sel.strftime("%Y-%m-%d"),
+                        "justificativa": justificativas_epis.get(epi, "") # Grava a justificativa (ou envia vazio se for legal)
                     })
                 
                 with st.spinner("Salvando lote no Supabase..."):
@@ -342,8 +386,7 @@ if menu == "lancar_epi":
                         st.success(f"Gravado com sucesso para {nome_funcionario}!")
                         st.balloons()
                     except Exception as e:
-                        st.error(f"Erro ao salvar no Supabase: {e}")
-
+                        st.error(f"Erro ao salvar no Supabase. Lembre-se de criar a coluna 'justificativa' no banco de dados! Detalhes: {e}")
 # ==============================================================================
 # VISÃO 2: COLETAR ASSINATURAS PENDENTES
 # ==============================================================================
