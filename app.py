@@ -350,65 +350,76 @@ if menu == "lancar_epi":
 elif menu == "coletar_ass":
     st.header("🖊️ Coleta de Assinaturas Pendentes")
     
-    # Busca todas as pendências gerais para verificar se existe algo pendente no sistema
-    res_pendentes = supabase.table("entregas_epi").select("*").eq("data_entrega", "PENDENTE").execute()
+    # Busca a base geral primeiro
+    res_pendentes = supabase.table("entregas_epi").select("*").execute()
     df_pendentes = pd.DataFrame(res_pendentes.data)
     
     if df_pendentes.empty:
-        st.info("Nenhuma assinatura pendente no momento!")
+        st.info("Nenhuma assinatura pendente no sistema!")
     else:
-        # Novo campo solicitando o RE antes de exibir e dar a baixa
-        re_busca = st.text_input("Digite o RE do colaborador para buscar suas pendências:").strip()
+        # TRATAMENTO BLINDADO: Garante que RE e status sejam lidos como texto limpo
+        df_pendentes['re'] = df_pendentes['re'].astype(str).str.strip()
+        df_pendentes['data_entrega'] = df_pendentes['data_entrega'].astype(str).str.strip().str.upper()
         
-        if re_busca:
-            # Filtra o DataFrame apenas para o RE digitado
-            df_pendentes_func = df_pendentes[df_pendentes['re'] == re_busca]
-            
-            if df_pendentes_func.empty:
-                st.success(f"O colaborador de RE {re_busca} não possui assinaturas pendentes!")
-            else:
-                st.warning(f"Encontradas {len(df_pendentes_func)} pendências para o RE {re_busca}:")
-                st.dataframe(df_pendentes_func, use_container_width=True)
-                
-                st.markdown("---")
-                st.markdown("### 🔒 Validação de Baixa Segura (Presencial)")
-                
-                if "limpar_cracha" not in st.session_state:
-                    st.session_state.limpar_cracha = False
-
-                if st.session_state.limpar_cracha:
-                    st.session_state.input_cracha_baixa = ""
-                    st.session_state.limpar_cracha = False
-
-                cracha_input = st.text_input(
-                    f"APROXIME O CRACHÁ PARA ASSINAR AS PENDÊNCIAS DO RE {re_busca}:", 
-                    type="password", 
-                    key="input_cracha_baixa"
-                ).strip()
-                
-                if cracha_input:
-                    data_hoje = datetime.now().strftime("%Y-%m-%d")
-                    
-                    try:
-                        # CORREÇÃO CRUCIAL: Agora inclui .eq("re", re_busca)
-                        res_upd = supabase.table("entregas_epi") \
-                            .update({"data_entrega": data_hoje}) \
-                            .eq("data_entrega", "PENDENTE") \
-                            .eq("re", re_busca) \
-                            .execute()
-                        
-                        qtd_baixadas = len(res_upd.data) if res_upd.data else 0
-                    
-                        if qtd_baixadas > 0:
-                            st.success(f"Sucesso! {qtd_baixadas} pendências do RE {re_busca} eliminadas e assinadas!")
-                            st.session_state.limpar_cracha = True
-                            st.rerun()
-                        else:
-                            st.warning("Falha ao registrar a baixa. Verifique os dados.")
-                    except Exception as e:
-                        st.error(f"Erro ao atualizar no Supabase: {e}")
+        # Filtra apenas o que contém "PEND"
+        df_pendentes = df_pendentes[df_pendentes['data_entrega'].str.contains("PEND")]
+        
+        if df_pendentes.empty:
+            st.info("Nenhuma assinatura pendente no momento!")
         else:
-            st.info("👆 Digite um RE acima para listar as pendências individuais e liberar a tela de assinatura.")
+            re_busca = st.text_input("Digite o RE do colaborador para buscar suas pendências:").strip()
+            
+            if re_busca:
+                # Agora o filtro funciona perfeitamente, pois ambos são texto
+                df_pendentes_func = df_pendentes[df_pendentes['re'] == re_busca]
+                
+                if df_pendentes_func.empty:
+                    st.success(f"O colaborador de RE {re_busca} não possui assinaturas pendentes!")
+                else:
+                    st.warning(f"Encontradas {len(df_pendentes_func)} pendências para o RE {re_busca}:")
+                    # Mostra os dados de forma limpa
+                    st.dataframe(df_pendentes_func[["re", "nome_funcionario", "epi", "qtd", "data_entrega"]], use_container_width=True)
+                    
+                    st.markdown("---")
+                    st.markdown("### 🔒 Validação de Baixa Segura (Presencial)")
+                    
+                    if "limpar_cracha" not in st.session_state:
+                        st.session_state.limpar_cracha = False
+
+                    if st.session_state.limpar_cracha:
+                        st.session_state.input_cracha_baixa = ""
+                        st.session_state.limpar_cracha = False
+
+                    cracha_input = st.text_input(
+                        f"APROXIME O CRACHÁ PARA ASSINAR AS PENDÊNCIAS DO RE {re_busca}:", 
+                        type="password", 
+                        key="input_cracha_baixa"
+                    ).strip()
+                    
+                    if cracha_input:
+                        # ESTRATÉGIA NOVA: Atualiza exatamente os IDs encontrados na tela
+                        ids_para_baixar = df_pendentes_func['id'].tolist()
+                        data_hoje = datetime.now().strftime("%Y-%m-%d")
+                        
+                        try:
+                            # Comando in_ permite atualizar vários IDs de uma vez só!
+                            res_upd = supabase.table("entregas_epi") \
+                                .update({"data_entrega": data_hoje}) \
+                                .in_("id", ids_para_baixar) \
+                                .execute()
+                            
+                            qtd_baixadas = len(res_upd.data) if res_upd.data else 0
+                        
+                            if qtd_baixadas > 0:
+                                st.success(f"Sucesso! {qtd_baixadas} pendências do RE {re_busca} eliminadas e assinadas!")
+                                st.session_state.limpar_cracha = True
+                                st.rerun()
+                            else:
+                                st.warning("Falha ao registrar a baixa no Supabase. Verifique a conexão.")
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar no Supabase: {e}")
+            else:
+                st.info("👆 Digite um RE acima para listar as pendências individuais e liberar a tela de assinatura.")
 
 # ==============================================================================
 # VISÃO 3: GERAR FICHA EM PDF PARA IMPRESSÃO (NR-6) E LOGS INDIVIDUAIS
