@@ -268,7 +268,6 @@ if menu == "lancar_epi":
         with col_f1:
             re_digitado = st.text_input("Digite o número do RE:", key="re_usuario").strip()
         with col_f2:
-            # ====== NOVA LÓGICA: IDENTIFICAÇÃO DE EMPRÉSTIMO ======
             if re_digitado == "0000":
                 nome_funcionario = "Empréstimo (Outras Unidades)"
                 st.info(f"🏢 Destino: {nome_funcionario}")
@@ -284,8 +283,9 @@ if menu == "lancar_epi":
         
         situacao_assinatura = "PENDENTE"
         justificativa_emprestimo = ""
+        re_retirante = "" 
+        bypass_nfc = False
         
-        # ====== NOVA LÓGICA: CRACHÁ vs AUTORIZAÇÃO MANUAL ======
         if re_digitado == "0000":
             st.warning("⚠️ MODO DE EMPRÉSTIMO ATIVADO")
             justificativa_emprestimo = st.text_input("Justificativa e Autorização do Empréstimo (Ex: Autorizado por Diretor João):").strip()
@@ -310,11 +310,18 @@ if menu == "lancar_epi":
                         st.error(f"Este crachá pertence a '{dono_desse_cracha}'! Registro ficará PENDENTE.")
             else:
                 st.info("Modo Bypass Ativo: A entrega será salva com status 'PENDENTE'.")
+                # ====== NOVO CAMPO OBRIGATÓRIO (QUEM ESTÁ RETIRANDO) ======
+                re_retirante = st.text_input("RE de quem está retirando o EPI fisicamente no balcão:").strip()
+                
+                if re_retirante:
+                    nome_retirante = mapa_re_nome.get(re_retirante, "Desconhecido")
+                    st.success(f"📦 O material será entregue em mãos para: **{nome_retirante}** (RE: {re_retirante})")
+                else:
+                    st.warning("⚠️ Digite o RE do responsável pela retirada para autorizar a entrega.")
             
         st.markdown("---")
         epis_selecionados = st.multiselect("Selecione os Equipamentos de Proteção (EPIs):", options=lista_epis, key="epis_usuario")
         
-        # Dicionários e travas para o salvamento
         quantidades_epis = {}
         justificativas_epis = {}
         bloquear_salvamento = False 
@@ -337,9 +344,7 @@ if menu == "lancar_epi":
                     if not df_epi.empty:
                         status_atual = df_epi.iloc[0]["Status"]
                 
-                # ====== NOVA LÓGICA DE CORES (BYPASS PARA EMPRÉSTIMO) ======
                 if re_digitado == "0000":
-                    # Sempre libera (verde) se for empréstimo, não valida histórico
                     st.markdown(f"**EPI:** <span style='color:#4CAF50; font-size:18px; font-weight:bold;'>{epi_item}</span> — Status: **EMPRÉSTIMO** ✅", unsafe_allow_html=True)
                     qtd_val = st.number_input(f"Quantidade ({epi_item}):", min_value=1, max_value=50, value=1, step=1, key=f"qtd_{epi_item}")
                     quantidades_epis[epi_item] = qtd_val
@@ -382,6 +387,9 @@ if menu == "lancar_epi":
         if botao_salvar:
             if re_digitado == "0000" and not justificativa_emprestimo:
                 st.error("🛑 Para registrar um empréstimo, preencha o campo de 'Justificativa e Autorização' acima antes de salvar.")
+            elif bypass_nfc and not re_retirante:
+                # ====== NOVA TRAVA DE SEGURANÇA ======
+                st.error("🛑 Modo Bypass Ativo: É obrigatório informar o RE de quem está retirando o EPI fisicamente para conseguir salvar o registro.")
             elif bloquear_salvamento:
                 st.error("🛑 Existem EPIs selecionados que ainda estão no prazo de validade. Você precisa justificar a troca antecipada antes de conseguir salvar.")
             elif not re_digitado or not nome_funcionario:
@@ -395,6 +403,12 @@ if menu == "lancar_epi":
                     texto_justificativa = justificativas_epis.get(epi, "")
                     if re_digitado == "0000":
                         texto_justificativa = f"EMPRÉSTIMO AUTORIZADO: {justificativa_emprestimo}"
+                    elif bypass_nfc and re_retirante:
+                        # Associa o nome de quem tirou, se não já existir outra justificativa (ex: quebra de EPI + bypass)
+                        if texto_justificativa:
+                            texto_justificativa += f" | Entregue para RE: {re_retirante}"
+                        else:
+                            texto_justificativa = f"Entregue para RE: {re_retirante}"
 
                     lote_linhas.append({
                         "re": str(re_digitado),
