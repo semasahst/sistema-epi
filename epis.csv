@@ -1,19 +1,19 @@
-Nome do EPI,CA (Certificado de Aprovação),Periodicidade (em dias),EPI com CA
+Nome do EPI,CA (Certificado de AprovaĂ§ĂŁo),Periodicidade (em dias),EPI com CA
 Bota de PVC,38201,180,Bota de PVC (CA: 38201)
-Botina de Segurança,50862,180,Botina de Segurança (CA: 50862)
+Botina de SeguranĂ§a,50862,180,Botina de SeguranĂ§a (CA: 50862)
 Capacete,498,360,Capacete (CA: 498)
 Capa de Chuva,28728,360,Capa de Chuva (CA: 28728)
-Luva Agentes Mecânicos,41076,15,Luva Agentes Mecânicos (CA: 41076)
+Luva Agentes MecĂ˘nicos,41076,15,Luva Agentes MecĂ˘nicos (CA: 41076)
 Luva de Vaqueta,46958,30,Luva de Vaqueta (CA: 46958)
-Luva Látex,45628,15,Luva Látex (CA: 45628)
+Luva LĂˇtex,45628,15,Luva LĂˇtex (CA: 45628)
 Luva Nitrilica,44033,15,Luva Nitrilica (CA: 44033)
 Mascara Descartavel PFF2,39220,8,Mascara Descartavel PFF2 (CA: 39220)
-Óculos Incolor,34082,60,Óculos Incolor (CA: 34082)
+Ă“culos Incolor,34082,60,Ă“culos Incolor (CA: 34082)
 Perneira,44234,180,Perneira (CA: 44234)
 Protetor Auricular Concha,-,180,Protetor Auricular Concha (CA: -)
 Protetor Auricular Plug,11512,90,Protetor Auricular Plug (CA: 11512)
 Protetor Facial,-,180,Protetor Facial (CA: -)
-Sapato de Segurança,15294,180,Sapato de Segurança (CA: 15294)
+Sapato de SeguranĂ§a,15294,180,Sapato de SeguranĂ§a (CA: 15294)
 Luva Isolante,38399,180,Luva Isolante (CA: 38399)
 Protetor Solar,-,30,Protetor Solar (CA: -)
 Respirador Semi-Facial,434,180,Respirador Semi-Facial (CA: 434)
@@ -28,34 +28,34 @@ Jaqueta laranja tamanho M,,365,Jaqueta laranja tamanho M (CA: -)
 Jaqueta laranja tamanho G,,365,Jaqueta laranja tamanho G (CA: -)
 Jaqueta laranja tamanho GG,,365,Jaqueta laranja tamanho GG (CA: -)
 Jaqueta laranja tamanho EG,,365,Jaqueta laranja tamanho EG (CA: -)
-Su�ter tamanho P,,365,Su�ter tamanho P (CA: -)
-Su�ter tamanho M,,365,Su�ter tamanho M (CA: -)
-Su�ter tamanho G,,365,Su�ter tamanho G (CA: -)
-Su�ter tamanho GG,,365,Su�ter tamanho GG (CA: -)
-Su�ter tamanho EG,,365,Su�ter tamanho EG (CA: -)
-Su�ter tamanho EG,,365,Su�ter tamanho EG (CA: -)
-Su�ter tamanho XG,,365,Su�ter tamanho XG (CA: -)
-Su�ter tamanho EXG,,365,Su�ter tamanho EXG (CA:-)
-Camisa verde manga curta
-Camisa verde manga longa
-Camisa laranja manga curta
-Camisa laranja manga longa
-Camisa preta manga curta
-Camisa preta manga longa
-Cal�a jeans tamanho 38
-Cal�a jeans tamanho 40
-Cal�a jeans tamanho 42
-Cal�a jeans tamanho 44
-Cal�a jeans tamanho 46
-Cal�a jeans tamanho 48
-Cal�a jeans tamanho 50
-Cal�a jeans tamanho 52
-Cal�a jeans tamanho 54
-Cal�a jeans tamanho 56
-Cal�a jeans tamanho 58
-Cal�a jeans tamanho 60
-Cal�a jeans tamanho 62
-Cal�a jeans tamanho 64
-Cal�a verde
-Cal�a laranja
-Cal�a ripstop
+Suéter tamanho P,,365,Suéter tamanho P (CA: -)
+Suéter tamanho M,,365,Suéter tamanho M (CA: -)
+Suéter tamanho G,,365,Suéter tamanho G (CA: -)
+Suéter tamanho GG,,365,Suéter tamanho GG (CA: -)
+Suéter tamanho EG,,365,Suéter tamanho EG (CA: -)
+Suéter tamanho EG,,365,Suéter tamanho EG (CA: -)
+Suéter tamanho XG,,365,Suéter tamanho XG (CA: -)
+Suéter tamanho EXG,,365,Suéter tamanho EXG (CA: -)
+Camisa verde manga curta,,,Camisa verde manga curta (CA: -)
+Camisa verde manga longa,,,Camisa verde manga longa (CA: -)
+Camisa laranja manga curta,,,Camisa laranja manga curta (CA: -)
+Camisa laranja manga longa,,,Camisa laranja manga longa (CA: -)
+Camisa preta manga curta,,,Camisa preta manga curta (CA: -)
+Camisa preta manga longa,,,Camisa preta manga longa (CA: -)
+Calça jeans tamanho 38,,,Calça jeans tamanho 38 (CA: -)
+Calça jeans tamanho 40,,,Calça jeans tamanho 40 (CA: -)
+Calça jeans tamanho 42,,,Calça jeans tamanho 42 (CA: -)
+Calça jeans tamanho 44,,,Calça jeans tamanho 44 (CA: -)
+Calça jeans tamanho 46,,,Calça jeans tamanho 46 (CA: -)
+Calça jeans tamanho 48,,,Calça jeans tamanho 48 (CA: -)
+Calça jeans tamanho 50,,,Calça jeans tamanho 50 (CA: -)
+Calça jeans tamanho 52,,,Calça jeans tamanho 52 (CA: -)
+Calça jeans tamanho 54,,,Calça jeans tamanho 54 (CA: -)
+Calça jeans tamanho 56,,,Calça jeans tamanho 56 (CA: -)
+Calça jeans tamanho 58,,,Calça jeans tamanho 58 (CA: -)
+Calça jeans tamanho 60,,,Calça jeans tamanho 60 (CA: -)
+Calça jeans tamanho 62,,,Calça jeans tamanho 62 (CA: -)
+Calça jeans tamanho 64,,,Calça jeans tamanho 64 (CA: -)
+Calça verde,,,Calça verde (CA: -)
+Calça laranja,,,Calça laranja (CA: -)
+Calça ripstop,,,Calça ripstop (CA: -)
