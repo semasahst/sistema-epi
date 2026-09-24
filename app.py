@@ -990,28 +990,34 @@ elif menu == "gestao_epis":
                 else:
                     with st.spinner("Consultando banco de dados/API..."):
                         try:
-                            # A API pública de CAs mais usada pela comunidade de desenvolvimento.
-                            # Caso no futuro opte por uma API paga, você passaria o Token aqui no cabeçalho.
-                            url_api = f"https://api.consultaca.com.br/v1/ca/{ca_busca}"
+                            # O link público que o Render gerou para você (ex: https://api-ca-semasa.onrender.com)
+                            url_api = f"https://api-ca-semasa.onrender.com/api/v1/ca/{ca_busca}"
                             
-                            # Realiza a busca com o requests.get
                             resposta = requests.get(url_api, timeout=10)
                             
                             if resposta.status_code == 200:
                                 dados = resposta.json()
                                 
-                                # Salva na memória do sistema
-                                st.session_state.api_nome_epi = dados.get("equipamento", "NOME NÃO ENCONTRADO")
+                                # A sua API privada fornece as chaves com a primeira letra maiúscula
+                                st.session_state.api_nome_epi = dados.get("Equipamento", "NOME NÃO ENCONTRADO")
                                 
-                                # Trata a data de validade do MTE
-                                raw_date = dados.get("validade", "")
+                                # Trata a data de validade
+                                raw_date = str(dados.get("DataValidade", ""))
                                 try:
                                     if "/" in raw_date:
                                         st.session_state.api_validade_ca = datetime.strptime(raw_date, "%d/%m/%Y").date()
-                                    else:
+                                    elif "-" in raw_date:
                                         st.session_state.api_validade_ca = datetime.strptime(raw_date, "%Y-%m-%d").date()
                                 except:
                                     st.session_state.api_validade_ca = datetime.now().date()
+                                    
+                                st.session_state.api_ca_numero = ca_busca
+                                st.success("Dados oficiais importados com sucesso! Verifique abaixo.")
+                                st.rerun() # Força a tela a recarregar para preencher o formulário
+                            else:
+                                st.error(f"CA não localizado ou erro na consulta (Código {resposta.status_code}).")
+                        except Exception as e:
+                            st.error(f"Erro de conexão com a sua API: {e}")
                                     
                                 st.session_state.api_ca_numero = ca_busca
                                 st.success("Dados importados com sucesso! Verifique abaixo.")
