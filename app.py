@@ -264,8 +264,10 @@ menu = [k for k, v in dict_menu.items() if v == opcao_selecionada][0]
 if menu == "lancar_epi":
     st.header("📝 Registro de Entrega de Equipamentos de Proteção")
     
-    if df_func.empty or df_epis.empty:
-        st.warning("Carregando tabelas base do GitHub...")
+    if df_func.empty:
+        st.warning("Carregando tabela de funcionários do GitHub...")
+    elif df_epis.empty:
+        st.warning("⚠️ O catálogo de EPIs está vazio. Vá no menu '⚙️ Gestão de EPIs' (na barra lateral) e cadastre o seu primeiro equipamento ou uniforme para liberar esta tela.")
     else:
         df_func_limpo = df_func.dropna(subset=[df_func.columns[0], df_func.columns[1]])
         
@@ -273,9 +275,11 @@ if menu == "lancar_epi":
         mapa_re_cracha = {str(row.iloc[0]).split('.')[0].strip(): str(row.iloc[4]).strip() if len(row) > 4 else "" for _, row in df_func_limpo.iterrows()}
         mapa_cracha_nome = {str(row.iloc[4]).strip(): str(row.iloc[1]).replace('?', '').strip() for _, row in df_func_limpo.iterrows() if len(row) > 4 and pd.notnull(row.iloc[4])}
         
+        # Lê a lista de EPIs do Supabase corretamente
         lista_epis = sorted(df_epis.iloc[:, 0].dropna().astype(str).str.replace('?', '', regex=False).unique().tolist())
         
         col_f1, col_f2 = st.columns(2)
+        # ... (O restante do código desta tela continua igual)
         with col_f1:
             re_digitado = st.text_input("Digite o número do RE:", key="re_usuario").strip()
         with col_f2:
