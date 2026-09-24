@@ -991,7 +991,7 @@ elif menu == "gestao_epis":
                     with st.spinner("Consultando banco de dados/API..."):
                         try:
                             # O link público que o Render gerou para você (ex: https://api-ca-semasa.onrender.com)
-                            url_api = f"https://api-ca-semasa.onrender.com/api/v1/ca/{ca_busca}"
+                            url_api = f"[https://api-ca-semasa.onrender.com/ca/](https://api-ca-semasa.onrender.com/ca/){ca_busca}"
                             
                             resposta = requests.get(url_api, timeout=60)
                             
