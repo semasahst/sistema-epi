@@ -993,7 +993,7 @@ elif menu == "gestao_epis":
                             # O link público que o Render gerou para você (ex: https://api-ca-semasa.onrender.com)
                             url_api = f"https://api-ca-semasa.onrender.com/api/v1/ca/{ca_busca}"
                             
-                            resposta = requests.get(url_api, timeout=10)
+                            resposta = requests.get(url_api, timeout=60)
                             
                             if resposta.status_code == 200:
                                 dados = resposta.json()
