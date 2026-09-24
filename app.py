@@ -228,13 +228,14 @@ validade de prova pericial trabalhista nos termos do Artigo 158 da CLT.
 st.sidebar.markdown("## Navegação")
 
 dict_menu = {
-    "lancar_epi": "Lançar Novos EPIs",
-    "coletar_ass": "Coletar Assinaturas Pendentes",
-    "gerar_ficha": "Gerar Ficha de EPI (Impressão)",
-    "dashboard": "Dashboard de Gestão",
-    "vencidos": "EPIs Vencidos/A Vencer",
-    "disparador_alertas": "Disparador de Alertas (HST)",
-    "auditoria": "Exportação para Auditoria"
+    "catalogo_epis": "⚙️ Gestão de Catálogo de EPIs",
+    "lancar_epi": "📝 Lançar Novos EPIs",
+    "coletar_ass": "🖊️ Coletar Assinaturas Pendentes",
+    "gerar_ficha": "📄 Ficha de EPI (Impressão)",
+    "dashboard": "📊 Dashboard de Gestão",
+    "vencidos": "⏳ EPIs Vencidos/A Vencer",
+    "disparador_alertas": "📢 Disparador de Alertas (HST)",
+    "auditoria": "🗄️ Exportação para Auditoria"
 }
 
 opcao_selecionada = st.sidebar.selectbox(
@@ -243,6 +244,96 @@ opcao_selecionada = st.sidebar.selectbox(
 )
 
 menu = [k for k, v in dict_menu.items() if v == opcao_selecionada][0]
+
+# ==============================================================================
+# VISÃO: GESTÃO E CADASTRO DO CATÁLOGO DE EPIS E UNIFORMES
+# ==============================================================================
+if menu == "catalogo_epis":
+    st.header("⚙️ Cadastro e Gestão do Catálogo de EPIs e Uniformes")
+    st.markdown("Gerencie os equipamentos com CA (e respetiva validade) e uniformes/acessórios isentos de CA.")
+    
+    aba_cad, aba_exc, aba_lista = st.tabs(["➕ Cadastrar Item", "❌ Excluir Item", "📋 Catálogo Atual"])
+    
+    # --- ABA 1: CADASTRAR ITEM ---
+    with aba_cad:
+        st.subheader("Novo Item para o Catálogo")
+        
+        with st.form("form_novo_epi", clear_on_submit=True):
+            nome_item = st.text_input("Nome do Item (Ex: Bota PVC, Camisa G):").strip()
+            dias_validade = st.number_input("Dias para substituição (Validade de uso na operação):", min_value=1, max_value=730, value=90, step=1)
+            
+            possui_ca = st.checkbox("Este item possui CA? (Desmarque para Uniformes/Acessórios)", value=True)
+            
+            ca_numero = ""
+            validade_ca_str = None
+            
+            if possui_ca:
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    ca_numero = st.text_input("Número do CA:").strip()
+                with col_c2:
+                    validade_ca_sel = st.date_input("Data de Validade do CA:", value=datetime.now().date())
+                    validade_ca_str = validade_ca_sel.strftime("%Y-%m-%d")
+            else:
+                ca_numero = "ISENTO"
+                validade_ca_str = None
+                
+            btn_gravar_catalogo = st.form_submit_button("💾 Salvar no Catálogo do Supabase")
+            
+            if btn_gravar_catalogo:
+                if not nome_item:
+                    st.error("O nome do item é obrigatório.")
+                elif possui_ca and not ca_numero:
+                    st.error("Informe o número do CA ou desmarque a opção se for isento.")
+                else:
+                    novo_registro = {
+                        "nome": nome_item,
+                        "ca": ca_numero,
+                        "validade_ca": validade_ca_str,
+                        "dias_validade": int(dias_validade)
+                    }
+                    try:
+                        supabase.table("catalogo_epis").insert(novo_registro).execute()
+                        st.success(f"Item '{nome_item}' cadastrado com sucesso no catálogo!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar no Supabase: {e}")
+
+    # --- ABA 2: EXCLUIR ITEM ---
+    with aba_exc:
+        st.subheader("Remover Item do Catálogo")
+        try:
+            res_cat = supabase.table("catalogo_epis").select("*").execute()
+            df_catalogo_atual = pd.DataFrame(res_cat.data)
+        except:
+            df_catalogo_atual = pd.DataFrame()
+            
+        if df_catalogo_atual.empty:
+            st.info("O catálogo está vazio.")
+        else:
+            lista_nomes_excluir = df_catalogo_atual["nome"].tolist()
+            item_selecionado_excluir = st.selectbox("Selecione o item que deseja remover:", options=lista_nomes_excluir)
+            
+            if st.button("🗑️ Excluir Item Selecionado", type="primary"):
+                try:
+                    supabase.table("catalogo_epis").delete().eq("nome", item_selecionado_excluir).execute()
+                    st.success(f"Item '{item_selecionado_excluir}' removido com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao excluir item: {e}")
+
+    # --- ABA 3: CATÁLOGO ATUAL ---
+    with aba_lista:
+        st.subheader("Itens Cadastrados Atualmente")
+        try:
+            res_cat_lista = supabase.table("catalogo_epis").select("*").execute()
+            df_lista = pd.DataFrame(res_cat_lista.data)
+            if not df_lista.empty:
+                st.dataframe(df_lista, use_container_width=True)
+            else:
+                st.info("Nenhum item cadastrado.")
+        except Exception as e:
+            st.error(f"Erro ao carregar catálogo: {e}")
 
 # ==============================================================================
 # VISÃO 1: LANÇAMENTO DE EPIS (Com suporte a Empréstimo RE 0000)
