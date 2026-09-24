@@ -1017,6 +1017,7 @@ elif menu == "gestao_epis":
                             else:
                                 st.error(f"CA não localizado ou erro na consulta (Código {resposta.status_code}).")
                         except Exception as e:
+                            st.error(f"Erro de conexão com a sua API: {e}")
                      
         st.divider()
 
