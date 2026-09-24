@@ -958,96 +958,151 @@ elif menu == "auditoria":
             st.error(f"Erro ao extrair e formatar logs: {e}")
 
 # ==============================================================================
-# VISÃO 8: GESTÃO E CADASTRO DE EPIS
+# VISÃO 8: GESTÃO DO CATÁLOGO DE EPIS
 # ==============================================================================
 elif menu == "gestao_epis":
-    st.header("⚙️ Cadastro e Gestão de EPIs e Uniformes")
-    st.markdown("Adicione novos equipamentos, registre a validade dos CAs ou exclua itens obsoletos do almoxarifado.")
+    st.header("⚙️ Cadastro e Gestão do Catálogo de EPIs")
+    st.markdown("Busque o CA na base nacional para preenchimento automático ou cadastre itens isentos manualmente.")
     
-    tab1, tab2, tab3 = st.tabs(["➕ Cadastrar Novo Item", "🗑️ Excluir Item", "📋 Catálogo Atual"])
+    # 1. INICIALIZAÇÃO DA MEMÓRIA TEMPORÁRIA (SESSION STATE)
+    if "api_nome_epi" not in st.session_state:
+        st.session_state.api_nome_epi = ""
+    if "api_validade_ca" not in st.session_state:
+        st.session_state.api_validade_ca = None
+    if "api_ca_numero" not in st.session_state:
+        st.session_state.api_ca_numero = ""
+
+    aba_cad, aba_exc, aba_lista = st.tabs(["➕ Cadastrar Item", "🗑️ Excluir Item", "📋 Catálogo Atual"])
     
-    # --------------------------------------------------------------------------
-    # ABA 1: CADASTRO
-    # --------------------------------------------------------------------------
-    with tab1:
-        with st.form("form_cadastro_epi", clear_on_submit=True):
-            st.subheader("Dados do Equipamento / Uniforme")
+    with aba_cad:
+        # ---------------------------------------------------------
+        # ROBÔ DE BUSCA DE CA (Integração API)
+        # ---------------------------------------------------------
+        st.subheader("🔍 Busca Automática (MTE)")
+        col_b1, col_b2 = st.columns([2, 1])
+        with col_b1:
+            ca_busca = st.text_input("Digite o Número do CA para buscar:", value=st.session_state.api_ca_numero).strip()
+        with col_b2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🤖 Buscar Dados do CA"):
+                if not ca_busca:
+                    st.warning("Digite um número de CA válido.")
+                else:
+                    with st.spinner("Consultando banco de dados/API..."):
+                        try:
+                            # A API pública de CAs mais usada pela comunidade de desenvolvimento.
+                            # Caso no futuro opte por uma API paga, você passaria o Token aqui no cabeçalho.
+                            url_api = f"https://api.consultaca.com.br/v1/ca/{ca_busca}"
+                            
+                            # Realiza a busca com o requests.get
+                            resposta = requests.get(url_api, timeout=10)
+                            
+                            if resposta.status_code == 200:
+                                dados = resposta.json()
+                                
+                                # Salva na memória do sistema
+                                st.session_state.api_nome_epi = dados.get("equipamento", "NOME NÃO ENCONTRADO")
+                                
+                                # Trata a data de validade do MTE
+                                raw_date = dados.get("validade", "")
+                                try:
+                                    if "/" in raw_date:
+                                        st.session_state.api_validade_ca = datetime.strptime(raw_date, "%d/%m/%Y").date()
+                                    else:
+                                        st.session_state.api_validade_ca = datetime.strptime(raw_date, "%Y-%m-%d").date()
+                                except:
+                                    st.session_state.api_validade_ca = datetime.now().date()
+                                    
+                                st.session_state.api_ca_numero = ca_busca
+                                st.success("Dados importados com sucesso! Verifique abaixo.")
+                                st.rerun() # Força a tela a recarregar para preencher o formulário
+                            else:
+                                st.error(f"Não foi possível buscar na API (Erro {resposta.status_code}). O serviço pode estar instável ou o CA não existe. Prossiga preenchendo manualmente.")
+                        except Exception as e:
+                            st.error(f"Erro de conexão com a internet ou API: {e}")
+
+        st.divider()
+
+        # ---------------------------------------------------------
+        # FORMULÁRIO DE CADASTRO
+        # ---------------------------------------------------------
+        with st.form("form_novo_epi", clear_on_submit=False):
+            st.subheader("📝 Confirmação dos Dados do Equipamento")
             
-            nome_novo_epi = st.text_input("Nome do EPI ou Uniforme (Ex: Bota de Segurança Bico PVC, Camisa G):").strip()
+            nome_item = st.text_input("Nome do Item (Ex: Bota PVC, Camisa G):", value=st.session_state.api_nome_epi).strip().upper()
+            dias_troca = st.number_input("Dias para substituição (Validade de uso na operação):", min_value=1, value=90)
             
-            col_c1, col_c2 = st.columns(2)
-            with col_c1:
-                # O Checkbox que define se é EPI ou Uniforme
-                tem_ca = st.checkbox("Este item possui CA? (Desmarque se for Uniforme)", value=True)
-                
-            with col_c2:
-                dias_troca = st.number_input("De quantos em quantos dias o funcionário precisa trocar este item?", min_value=1, max_value=1825, value=90)
+            possui_ca = st.checkbox("Este item possui CA? (Desmarque para Uniformes/Acessórios)", value=True)
             
-            # Condicionais para CA
             numero_ca = "N/A"
-            data_validade_ca = None
+            validade_ca = None
             
-            if tem_ca:
-                col_ca1, col_ca2 = st.columns(2)
-                with col_ca1:
-                    numero_ca = st.text_input("Número do Certificado de Aprovação (CA):").strip()
-                with col_ca2:
-                    data_validade_ca = st.date_input("Data de Validade do CA:")
+            if possui_ca:
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    numero_ca = st.text_input("Número do CA:", value=st.session_state.api_ca_numero).strip()
+                with col_c2:
+                    # Se o robô não preencheu, traz a data de hoje por padrão
+                    data_padrao = st.session_state.api_validade_ca if st.session_state.api_validade_ca else datetime.now().date()
+                    validade_ca = st.date_input("Data de Validade do CA:", value=data_padrao)
             else:
-                st.info("Item classificado como Uniforme/Acessório (Isento de CA).")
+                st.info("Item classificado como isento de CA.")
                 
-            btn_salvar_epi = st.form_submit_button("💾 Salvar no Catálogo")
+            btn_salvar = st.form_submit_button("💾 Salvar no Catálogo do Supabase")
             
-            if btn_salvar_epi:
-                if not nome_novo_epi:
-                    st.error("O nome do item é obrigatório!")
-                elif tem_ca and not numero_ca:
-                    st.error("Por favor, informe o número do CA.")
+            if btn_salvar:
+                if not nome_item:
+                    st.error("O nome do item é obrigatório.")
+                elif possui_ca and not numero_ca:
+                    st.error("Por favor, preencha o número do CA.")
                 else:
                     novo_registro = {
-                        "nome": nome_novo_epi.upper(),
+                        "nome": nome_item,
                         "ca": numero_ca,
                         "dias_validade": dias_troca,
-                        "validade_ca": data_validade_ca.strftime("%Y-%m-%d") if data_validade_ca else None
+                        "validade_ca": validade_ca.strftime("%Y-%m-%d") if possui_ca and validade_ca else None
                     }
                     try:
+                        # Gravando no banco de dados
                         supabase.table("catalogo_epis").insert(novo_registro).execute()
-                        st.success(f"Item '{nome_novo_epi.upper()}' cadastrado com sucesso!")
-                        st.cache_data.clear() # Limpa o cache para forçar a atualização da tabela na hora
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar no banco: {e}")
-
-    # --------------------------------------------------------------------------
-    # ABA 2: EXCLUSÃO
-    # --------------------------------------------------------------------------
-    with tab2:
-        st.subheader("Remover Item do Catálogo")
-        if df_epis.empty:
-            st.warning("Não há EPIs cadastrados no momento.")
-        else:
-            lista_para_excluir = sorted(df_epis['nome'].dropna().unique().tolist())
-            epi_excluir = st.selectbox("Selecione o Item que deseja excluir:", options=[""] + lista_para_excluir)
-            
-            if epi_excluir:
-                st.error(f"⚠️ Atenção: Tem certeza que deseja remover **{epi_excluir}** do catálogo de lançamentos?")
-                if st.button("🗑️ Confirmar Exclusão"):
-                    try:
-                        supabase.table("catalogo_epis").delete().eq("nome", epi_excluir).execute()
-                        st.success("Item removido com sucesso!")
+                        st.success(f"Item '{nome_item}' cadastrado com sucesso!")
+                        
+                        # Limpa os dados do robô da memória para não atrapalhar o próximo cadastro
+                        st.session_state.api_nome_epi = ""
+                        st.session_state.api_validade_ca = None
+                        st.session_state.api_ca_numero = ""
+                        
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
+                        st.error(f"Erro ao salvar: {e}")
 
-    # --------------------------------------------------------------------------
-    # ABA 3: VISUALIZAÇÃO GERAL
-    # --------------------------------------------------------------------------
-    with tab3:
-        st.subheader("Catálogo Ativo")
-        if not df_epis.empty:
-            # Exibe os dados formatados
-            df_view = df_epis.copy()
-            st.dataframe(df_view, use_container_width=True)
+    # ---------------------------------------------------------
+    # ABA 2: EXCLUSÃO
+    # ---------------------------------------------------------
+    with aba_exc:
+        st.subheader("Remover Item do Catálogo")
+        if df_epis.empty:
+            st.warning("O catálogo está vazio.")
         else:
-            st.info("O catálogo está vazio.")
+            lista_exclusao = sorted(df_epis['nome'].dropna().unique().tolist())
+            item_excluir = st.selectbox("Selecione o item para exclusão:", options=[""] + lista_exclusao)
+            
+            if item_excluir and st.button("🗑️ Confirmar Exclusão"):
+                try:
+                    supabase.table("catalogo_epis").delete().eq("nome", item_excluir).execute()
+                    st.success("Item removido permanentemente!")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao excluir: {e}")
+
+    # ---------------------------------------------------------
+    # ABA 3: LISTAGEM GERAL
+    # ---------------------------------------------------------
+    with aba_lista:
+        st.subheader("Itens Disponíveis para Entrega")
+        if not df_epis.empty:
+            st.dataframe(df_epis, use_container_width=True)
+        else:
+            st.info("Nenhum item cadastrado.")
