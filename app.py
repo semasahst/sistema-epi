@@ -32,18 +32,28 @@ except Exception as e:
     st.stop()
 
 # ==============================================================================
-# LEITURA DAS TABELAS MESTRE (Mantidas no GitHub por serem leitura simples)
+# LEITURA DAS TABELAS (Funcionários no GitHub, EPIs no Supabase)
 # ==============================================================================
 URL_FUNCIONARIOS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/funcionarios.csv"
-URL_EPIS = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/epis.csv"
 
 @st.cache_data(ttl=60)
 def buscar_dados_planilhas():
     try:
+        # Lê funcionários do GitHub
         df_f = pd.read_csv(URL_FUNCIONARIOS, dtype=str).dropna(how='all')
-        df_e = pd.read_csv(URL_EPIS, dtype=str).dropna(how='all')
+        
+        # Lê o Catálogo de EPIs do Supabase
+        res_epis = supabase.table("catalogo_epis").select("*").execute()
+        df_e = pd.DataFrame(res_epis.data)
+        
+        # Se a tabela tiver dados, vamos padronizar as colunas para o resto do sistema não quebrar
+        if not df_e.empty:
+            # Organiza as colunas na mesma ordem que o sistema antigo lia (Nome, CA, Dias)
+            df_e = df_e[['nome', 'ca', 'dias_validade', 'validade_ca']]
+        
         return df_f, df_e
-    except:
+    except Exception as e:
+        st.error(f"Erro ao carregar dados mestres: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_func, df_epis = buscar_dados_planilhas()
@@ -237,7 +247,8 @@ dict_menu = {
     "dashboard": "Dashboard de Gestão",
     "vencidos": "EPIs Vencidos/A Vencer",
     "disparador_alertas": "Disparador de Alertas (HST)",
-    "auditoria": "Exportação para Auditoria"
+    "auditoria": "Exportação para Auditoria",
+    "gestao_epis": "⚙️ Cadastro e Gestão de EPIs" # <-- NOVA OPÇÃO ADICIONADA AQUI
 }
 
 opcao_selecionada = st.sidebar.selectbox(
@@ -941,3 +952,98 @@ elif menu == "auditoria":
                 )
         except Exception as e:
             st.error(f"Erro ao extrair e formatar logs: {e}")
+
+# ==============================================================================
+# VISÃO 8: GESTÃO E CADASTRO DE EPIS
+# ==============================================================================
+elif menu == "gestao_epis":
+    st.header("⚙️ Cadastro e Gestão de EPIs e Uniformes")
+    st.markdown("Adicione novos equipamentos, registre a validade dos CAs ou exclua itens obsoletos do almoxarifado.")
+    
+    tab1, tab2, tab3 = st.tabs(["➕ Cadastrar Novo Item", "🗑️ Excluir Item", "📋 Catálogo Atual"])
+    
+    # --------------------------------------------------------------------------
+    # ABA 1: CADASTRO
+    # --------------------------------------------------------------------------
+    with tab1:
+        with st.form("form_cadastro_epi", clear_on_submit=True):
+            st.subheader("Dados do Equipamento / Uniforme")
+            
+            nome_novo_epi = st.text_input("Nome do EPI ou Uniforme (Ex: Bota de Segurança Bico PVC, Camisa G):").strip()
+            
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                # O Checkbox que define se é EPI ou Uniforme
+                tem_ca = st.checkbox("Este item possui CA? (Desmarque se for Uniforme)", value=True)
+                
+            with col_c2:
+                dias_troca = st.number_input("De quantos em quantos dias o funcionário precisa trocar este item?", min_value=1, max_value=1825, value=90)
+            
+            # Condicionais para CA
+            numero_ca = "N/A"
+            data_validade_ca = None
+            
+            if tem_ca:
+                col_ca1, col_ca2 = st.columns(2)
+                with col_ca1:
+                    numero_ca = st.text_input("Número do Certificado de Aprovação (CA):").strip()
+                with col_ca2:
+                    data_validade_ca = st.date_input("Data de Validade do CA:")
+            else:
+                st.info("Item classificado como Uniforme/Acessório (Isento de CA).")
+                
+            btn_salvar_epi = st.form_submit_button("💾 Salvar no Catálogo")
+            
+            if btn_salvar_epi:
+                if not nome_novo_epi:
+                    st.error("O nome do item é obrigatório!")
+                elif tem_ca and not numero_ca:
+                    st.error("Por favor, informe o número do CA.")
+                else:
+                    novo_registro = {
+                        "nome": nome_novo_epi.upper(),
+                        "ca": numero_ca,
+                        "dias_validade": dias_troca,
+                        "validade_ca": data_validade_ca.strftime("%Y-%m-%d") if data_validade_ca else None
+                    }
+                    try:
+                        supabase.table("catalogo_epis").insert(novo_registro).execute()
+                        st.success(f"Item '{nome_novo_epi.upper()}' cadastrado com sucesso!")
+                        st.cache_data.clear() # Limpa o cache para forçar a atualização da tabela na hora
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar no banco: {e}")
+
+    # --------------------------------------------------------------------------
+    # ABA 2: EXCLUSÃO
+    # --------------------------------------------------------------------------
+    with tab2:
+        st.subheader("Remover Item do Catálogo")
+        if df_epis.empty:
+            st.warning("Não há EPIs cadastrados no momento.")
+        else:
+            lista_para_excluir = sorted(df_epis['nome'].dropna().unique().tolist())
+            epi_excluir = st.selectbox("Selecione o Item que deseja excluir:", options=[""] + lista_para_excluir)
+            
+            if epi_excluir:
+                st.error(f"⚠️ Atenção: Tem certeza que deseja remover **{epi_excluir}** do catálogo de lançamentos?")
+                if st.button("🗑️ Confirmar Exclusão"):
+                    try:
+                        supabase.table("catalogo_epis").delete().eq("nome", epi_excluir).execute()
+                        st.success("Item removido com sucesso!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
+
+    # --------------------------------------------------------------------------
+    # ABA 3: VISUALIZAÇÃO GERAL
+    # --------------------------------------------------------------------------
+    with tab3:
+        st.subheader("Catálogo Ativo")
+        if not df_epis.empty:
+            # Exibe os dados formatados
+            df_view = df_epis.copy()
+            st.dataframe(df_view, use_container_width=True)
+        else:
+            st.info("O catálogo está vazio.")
