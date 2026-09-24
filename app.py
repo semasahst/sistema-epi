@@ -1017,16 +1017,7 @@ elif menu == "gestao_epis":
                             else:
                                 st.error(f"CA não localizado ou erro na consulta (Código {resposta.status_code}).")
                         except Exception as e:
-                            st.error(f"Erro de conexão com a sua API: {e}")
-                                    
-st.session_state.api_ca_numero = ca_busca
-st.success("Dados importados com sucesso! Verifique abaixo.")
-st.rerun() # Força a tela a recarregar para preencher o formulário
-                            else:
-                                st.error(f"Não foi possível buscar na API (Erro {resposta.status_code}). O serviço pode estar instável ou o CA não existe. Prossiga preenchendo manualmente.")
-                        except Exception as e:
-                            st.error(f"Erro de conexão com a internet ou API: {e}")
-
+                     
         st.divider()
 
         # ---------------------------------------------------------
