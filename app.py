@@ -778,30 +778,101 @@ elif menu == "vencidos":
 # ==============================================================================
 elif menu == "disparador_alertas":
     st.header("📢 Central de Disparos e Alertas Consolidados (HST)")
+    st.markdown("Painel dedicado para o time do HST disparar notificações em massa de cobrança via e-mail corporativo.")
+    
     if df_base_completa.empty:
         st.info("Nenhum histórico coletado para gerar alertas.")
     else:
-        aba_assinaturas, aba_validades, aba_gestores = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos", "🏢 Cobrança por Gestor"])
+        aba_assinaturas, aba_validades, aba_gestores = st.tabs(["✍️ Assinaturas Pendentes", "⚠️ EPIs Vencidos e Críticos", "🏢 Cobrança por Gestor (Departamento)"])
+        
+        # ABA 1: ASSINATURAS PENDENTES
         with aba_assinaturas:
             df_pendentes_geral = df_base_completa[df_base_completa['Assinatura'] == "Pendente"]
             if df_pendentes_geral.empty:
                 st.success("Excelente! O Semasa não possui nenhuma assinatura pendente hoje.")
             else:
+                st.warning(f"Existem atualmente {len(df_pendentes_geral)} assinaturas pendentes no sistema.")
                 func_agrupados = df_pendentes_geral.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="Itens Pendentes")
                 st.dataframe(func_agrupados, use_container_width=True)
+                
+                st.markdown("### ⚡ Cobrança de Assinatura")
+                for _, row in func_agrupados.iterrows():
+                    re_f = row["RE"]
+                    nome_f = row["Funcionário"]
+                    email_f = row["Email"]
+                    qtd_f = row["Itens Pendentes"]
+                    df_itens_f = df_pendentes_geral[df_pendentes_geral["RE"] == re_f]
+                    lista_itens = "%0A".join([f"- {item['EPI']} (Entregue em: {item['Data Entrega Declarada'].strftime('%d/%m/%Y')})" for _, item in df_itens_f.iterrows()])
+                    
+                    assunto_lote = urllib.parse.quote(f"CONVOCAÇÃO: {qtd_f} Assinaturas de EPI Pendentes - RE {re_f}")
+                    corpo_lote = urllib.parse.quote(
+                        f"Prezado(a) {nome_f}, \n"
+                        f"Identificamos que você possui {qtd_f} pendências de assinatura eletrônica no sistema do SEMASA: \n"
+                        f"{lista_itens} \n\n"
+                        f"A regularização imediata é obrigatória para fins de conformidade com a NR-6. Por favor, compareça ao HST munido de seu crachá NFC. \n\n"
+                        f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_lote = f"mailto:{email_f}?subject={assunto_lote}&body={corpo_lote}"
+                    col_c1, col_c2 = st.columns([3, 1])
+                    col_c1.write(f"👤 **{nome_f}** (RE: {re_f}) — {qtd_f} assinatura(s) pendente(s)")
+                    col_c2.markdown(f'<a href="{link_mailto_lote}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#0288D1; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Cobrar Assinatura</a>', unsafe_allow_html=True)
+        
+        # ABA 2: EPIS VENCIDOS E CRÍTICOS
         with aba_validades:
             df_venc_crit = df_base_completa[df_base_completa['Status'].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
             if df_venc_crit.empty:
                 st.success("Nenhum EPI vencido ou em estado crítico no momento!")
             else:
+                st.warning(f"Existem {len(df_venc_crit)} EPIs em estado crítico ou já vencidos.")
                 func_venc_agrupados = df_venc_crit.groupby(["RE", "Funcionário", "Email"]).size().reset_index(name="EPIs Críticos/Vencidos")
                 st.dataframe(func_venc_agrupados, use_container_width=True)
+                
+                st.markdown("### ⚡ Notificação de Troca de EPI")
+                for _, row in func_venc_agrupados.iterrows():
+                    re_f = row["RE"]
+                    nome_f = row["Funcionário"]
+                    email_f = row["Email"]
+                    qtd_v = row["EPIs Críticos/Vencidos"]
+                    df_itens_v = df_venc_crit[df_venc_crit["RE"] == re_f]
+                    lista_itens_v = "%0A".join([f"- {item['EPI']} (Status: {item['Status']} | Vencimento: {item['Data Vencimento'].strftime('%d/%m/%Y')})" for _, item in df_itens_v.iterrows()])
+                    
+                    assunto_venc = urllib.parse.quote(f"ALERTA: Substituição de EPI Necessária - RE {re_f}")
+                    corpo_venc = urllib.parse.quote(
+                        f"Prezado(a) {nome_f},\n\n"
+                        f"Identificamos que você possui {qtd_v} equipamento(s) de proteção vencido(s) ou próximo(s) do vencimento:\n"
+                        f"{lista_itens_v}\n\n"
+                        f"Solicitamos o comparecimento ao setor de HST para realizar a substituição e a retirada do novo material.\n\n"
+                        f"Atenciosamente,\nEquipe de Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_venc = f"mailto:{email_f}?subject={assunto_venc}&body={corpo_venc}"
+                    col_v1, col_v2 = st.columns([3, 1])
+                    col_v1.write(f"⚠️ **{nome_f}** (RE: {re_f}) — {qtd_v} item(ns) exigindo atenção")
+                    col_v2.markdown(f'<a href="{link_mailto_venc}" target="_blank" style="padding:4px 10px; border-radius:4px; background-color:#E65100; color:white; text-decoration:none; font-size:13px; font-weight:bold;">✉️ Alertar Troca</a>', unsafe_allow_html=True)
+        
+        # ABA 3: COBRANÇA POR GESTOR
         with aba_gestores:
+            st.markdown("### 🏢 Cobrança Consolidada por Setor/Departamento")
             deptos_disponiveis = df_base_completa["Departamento"].unique().tolist()
             depto_sel = st.selectbox("Selecione o Departamento para Notificar a Chefia:", options=deptos_disponiveis)
+            
             if depto_sel:
                 df_depto = df_base_completa[(df_base_completa["Departamento"] == depto_sel) & ((df_base_completa["Assinatura"] == "Pendente") | (df_base_completa["Status"] != "Regular"))]
-                st.dataframe(df_depto[["RE", "Funcionário", "Cargo", "EPI", "Status", "Assinatura"]], use_container_width=True)
+                if df_depto.empty:
+                    st.success(f"O departamento **{depto_sel}** está 100% regularizado!")
+                else:
+                    st.dataframe(df_depto[["RE", "Funcionário", "Cargo", "EPI", "Status", "Assinatura"]], use_container_width=True)
+                    resumo_depto = "%0A".join([f"- {row['Funcionário']} (RE: {row['RE']}) | Item: {row['EPI']} | Status Assinatura: {row['Assinatura']} | Status Validade: {row['Status']}" for _, row in df_depto.iterrows()])
+                    
+                    assunto_gestor = urllib.parse.quote(f"RELATÓRIO PENDÊNCIAS EPI - Setor: {depto_sel}")
+                    corpo_gestor = urllib.parse.quote(
+                        f"Prezado Gestor do setor {depto_sel},\n\n"
+                        f"Encaminhamos o relatório atualizado de pendências de segurança dos colaboradores sob sua gestão:\n\n"
+                        f"{resumo_depto}\n\n"
+                        f"Solicitamos o apoio na orientação da equipe para regularização imediata junto ao HST.\n\n"
+                        f"Atenciosamente,\nEngenharia e Segurança do Trabalho - SEMASA"
+                    )
+                    link_mailto_gestor = f"mailto:?subject={assunto_gestor}&body={corpo_gestor}"
+                    st.markdown(f'<a href="{link_mailto_gestor}" target="_blank" style="padding:8px 16px; border-radius:4px; background-color:#2E7D32; color:white; text-decoration:none; font-size:14px; font-weight:bold;">✉️ Enviar Relatório ao Gestor do Setor</a>', unsafe_allow_html=True)
 
 # ==============================================================================
 # VISÃO 7: EXPORTAÇÃO PARA AUDITORIA E MTE
