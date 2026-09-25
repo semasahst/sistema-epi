@@ -627,7 +627,7 @@ elif menu == "gerar_ficha":
                         )
 
 # ==============================================================================
-# VISÃO 4: DASHBOARD DE GESTÃO
+# VISÃO 4: DASHBOARD DE GESTÃO (COM FILTROS E MAIS GRÁFICOS)
 # ==============================================================================
 elif menu == "dashboard":
     st.header("📊 Dashboard de Gestão Estratégica")
@@ -635,14 +635,23 @@ elif menu == "dashboard":
     if df_base_completa.empty:
         st.info("Nenhum dado disponível para o Dashboard no momento.")
     else:
+        # ----------------------------------------------------------------------
+        # CONTROLES DE FILTRO DINÂMICO
+        # ----------------------------------------------------------------------
         st.markdown("### 🔍 Filtros Interativos")
+        
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         with col_f1:
             datas_validas = df_base_completa["Data Entrega Declarada"].dropna()
             min_dt = datas_validas.min().date() if not datas_validas.empty else datetime.now().date()
             max_dt = datas_validas.max().date() if not datas_validas.empty else datetime.now().date()
-            intervalo_datas = st.date_input("Período de Entrega:", value=(min_dt, max_dt), key="filtro_datas_dash")
+            
+            intervalo_datas = st.date_input(
+                "Período de Entrega:",
+                value=(min_dt, max_dt),
+                key="filtro_datas_dash"
+            )
             
         with col_f2:
             deptos_opts = ["Todos"] + sorted([str(d) for d in df_base_completa["Departamento"].unique() if pd.notnull(d) and str(d).strip() != ""])
@@ -656,7 +665,9 @@ elif menu == "dashboard":
             status_opts = ["Todos"] + sorted([str(s) for s in df_base_completa["Status"].unique() if pd.notnull(s)])
             status_sel = st.selectbox("Status de Validade:", options=status_opts, key="filtro_status_dash")
 
+        # Aplicação dos Filtros na Base
         df_dash = df_base_completa.copy()
+        
         if isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 2:
             dt_i, dt_f = intervalo_datas
             df_dash = df_dash[(df_dash["Data Entrega Declarada"].dt.date >= dt_i) & (df_dash["Data Entrega Declarada"].dt.date <= dt_f)]
@@ -666,12 +677,18 @@ elif menu == "dashboard":
             
         if depto_sel != "Todos":
             df_dash = df_dash[df_dash["Departamento"] == depto_sel]
+            
         if cargo_sel != "Todos":
             df_dash = df_dash[df_dash["Cargo"] == cargo_sel]
+            
         if status_sel != "Todos":
             df_dash = df_dash[df_dash["Status"] == status_sel]
             
         st.markdown("---")
+        
+        # ----------------------------------------------------------------------
+        # METRICAS DE KPI
+        # ----------------------------------------------------------------------
         tot_registros = len(df_dash)
         tot_ass_pendentes = len(df_dash[df_dash["Assinatura"] == "Pendente"])
         tot_vencidos = len(df_dash[df_dash["Status"] == "VENCIDO"])
@@ -684,14 +701,59 @@ elif menu == "dashboard":
         m4.metric("Atenção Crítica (15 dias)", tot_criticos, delta_color="off")
 
         st.markdown("---")
-        if not df_dash.empty:
+        
+        if df_dash.empty:
+            st.warning("Nenhum registro encontrado para os filtros selecionados.")
+        else:
+            # ----------------------------------------------------------------------
+            # GRÁFICOS - LINHA 1: Status de Validade & Entregas por Cargo
+            # ----------------------------------------------------------------------
             col_db1, col_db2 = st.columns(2)
+
             with col_db1:
                 st.markdown("#### 📊 Distribuição por Status de Validade")
                 st.bar_chart(df_dash["Status"].value_counts())
+
             with col_db2:
                 st.markdown("#### 👔 Entregas por Cargo")
                 st.bar_chart(df_dash["Cargo"].value_counts())
+
+            st.markdown("---")
+            
+            # ----------------------------------------------------------------------
+            # GRÁFICOS - LINHA 2: Entregas por Departamento & Top EPIs Entregues
+            # ----------------------------------------------------------------------
+            col_db3, col_db4 = st.columns(2)
+
+            with col_db3:
+                st.markdown("#### 🏢 Entregas por Departamento")
+                st.bar_chart(df_dash["Departamento"].value_counts())
+
+            with col_db4:
+                st.markdown("#### 🥽 Top 10 EPIs Mais Entregues")
+                st.bar_chart(df_dash["EPI"].value_counts().head(10))
+                
+            st.markdown("---")
+            
+            # ----------------------------------------------------------------------
+            # GRÁFICOS - LINHA 3: Análise de Inconformidades (Vencidos e Críticos)
+            # ----------------------------------------------------------------------
+            st.markdown("#### ⚠️ Concentração de Inconformidades (EPIs Vencidos ou Críticos)")
+            
+            df_inconforme = df_dash[df_dash["Status"].isin(["VENCIDO", "CRITICO (Ate 15 dias)"])]
+            
+            if df_inconforme.empty:
+                st.success("Parabéns! Nenhuma inconformidade registrada para o recorte selecionado.")
+            else:
+                col_inc1, col_inc2 = st.columns(2)
+                
+                with col_inc1:
+                    st.markdown("##### Inconformidades por Cargo")
+                    st.bar_chart(df_inconforme["Cargo"].value_counts())
+                    
+                with col_inc2:
+                    st.markdown("##### Inconformidades por Departamento")
+                    st.bar_chart(df_inconforme["Departamento"].value_counts())
 
 # ==============================================================================
 # VISÃO 5: EPIS VENCIDOS / A VENCER
