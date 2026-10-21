@@ -1,0 +1,14 @@
+name: Manter Sistema Acordado
+
+on:
+  schedule:
+    # Roda todos os dias às 09:00 UTC (06:00 no Brasil)
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping_sistema:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acessar o Streamlit e Supabase
+        run: curl -s "https://sistema-epi-ja5epap7fsjgdiaoegfj6t.streamlit.app/" > /dev/null
